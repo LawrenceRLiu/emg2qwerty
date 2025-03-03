@@ -1,0 +1,1 @@
+General Idea, pretrain a model on the spectogram of each individual channel using a ViTMAE format.
