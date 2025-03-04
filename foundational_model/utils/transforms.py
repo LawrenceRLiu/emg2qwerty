@@ -86,9 +86,6 @@ class InverseSpectogramTransform(nn.Module):
         if self.predict_phases:
             x = torch.exp(torch.einsum("...ijk,i -> ...jk", x, self.tensor)) #multiply by 1+1j to get the complex number
         else:
-            print(x.shape)
-            print(x.squeeze(-3).shape)
-            print(phases.shape)
             x = torch.exp(x.squeeze(-3) + 1j * phases)
         x = self.istft(x)
         return x

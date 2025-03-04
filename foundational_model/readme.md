@@ -9,7 +9,7 @@ this will allow us to train the downstream task with less data. Furthermore for 
 foundational model that can be used for other tasks as well.
 
 TODOs and potential research directions:
-- [ ] Move the loss fns and spectogram transforms to seperate classes 
+- [x] Move the loss fns and spectogram transforms to seperate classes 
 - [ ] Finish two trainers, one for a foundational model and one for a downstream task, these will be based on the huggingface trainers
 - [ ] Use Hydra for config management (potentially)
 - [ ] Experiment with different foundational architectures models, for example:
