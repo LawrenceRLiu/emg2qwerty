@@ -1,4 +1,4 @@
-from dataclass import dataclass
+from dataclasses import dataclass
 from typing import Dict, Tuple
 
 @dataclass

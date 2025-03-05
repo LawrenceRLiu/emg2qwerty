@@ -13,7 +13,7 @@ class PretrainChannelWise_emg2qwerty(emg2qwerty.data.WindowedEMGDataset):
     def __len__(self):
         return super().__len__()*self.n_channels
     
-    def __getitem__(self, idx) -> Dict[str:torch.Tensor]:
+    def __getitem__(self, idx) -> Dict[str,torch.Tensor]:
         """get item from the dataset
 
         Returns:
@@ -36,7 +36,7 @@ class PretrainHandWise_emg2qwerty(emg2qwerty.data.WindowedEMGDataset):
     n_hands = 2 #2 hands, I hope!
     def __len__(self):
         return super().__len__()*self.n_hands
-    def __getitem__(self, idx)-> Dict[str:torch.Tensor]:
+    def __getitem__(self, idx)-> Dict[str,torch.Tensor]:
         """get item from the dataset
 
         Returns:
@@ -53,7 +53,7 @@ class PretrainHandWise_emg2qwerty(emg2qwerty.data.WindowedEMGDataset):
 class Pretrain_emg2qwerty(emg2qwerty.data.WindowedEMGDataset):
     flatten: bool = True #whether to flatten the data
 
-    def __getitem__(self, idx)-> Dict[str:torch.Tensor]:
+    def __getitem__(self, idx)-> Dict[str,torch.Tensor]:
         """get item from the dataset
 
         Returns:

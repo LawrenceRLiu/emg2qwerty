@@ -25,6 +25,7 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         P: Union[List[float],float] = 2, #the p-norm for the losses
         loss_weights:Union[List[float], Literal["equal","balancing_0th_order"]] = "equal", #ToDO: allow for balancing_0th_order and potentially balancing_1st_order
         num_channels:int = 1, #number of channels in the input
+        log_spectogram:bool = True,
 
         hidden_size=768,
         num_hidden_layers=12,
@@ -83,6 +84,7 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         self.predict_phases = predict_phases
         self.sequence_len = sequence_len
         self.P = P
+        self.log_spectogram = log_spectogram
 
     
 
@@ -101,14 +103,16 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining):
             n_fft=config.n_fft,
             hop_length=config.hop_length,
             reshape_size=config.reshape_size,
-            predict_phases=config.predict_phases
+            predict_phases=config.predict_phases,
+            log = config.log_spectogram
         )
 
         self.inverse_transform = InverseSpectogramTransform(
             n_fft=config.n_fft,
             hop_length=config.hop_length,
             original_size=config.spectogram_size,
-            predict_phases=config.predict_phases
+            predict_phases=config.predict_phases,
+            log = config.log_spectogram
         )
         
         self.predict_phases = config.predict_phases

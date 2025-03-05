@@ -12,13 +12,16 @@ class SpectogramTransform(nn.Module):
     reshape_size: int = 224
     predict_phases: bool = False
     eps: float = 1e-6
+    log: bool = True
 
     def __post_init__(self):
+        super().__init__()  
         self.spectrogram = T_audio.Spectrogram(
             n_fft=self.n_fft,
             hop_length=self.hop_length,
-            power = None)
-        self.resize = T_vision.Resize((self.reshape_size, self.reshape_size))
+            power=None)
+        self.resize = T_vision.Resize((self.reshape_size, self.reshape_size), 
+                                      interpolation=T_vision.InterpolationMode.NEAREST)
 
     def forward(self, x: torch.FloatTensor
                 ) -> Union[Tuple[torch.FloatTensor, torch.FloatTensor], torch.FloatTensor]:
@@ -37,10 +40,13 @@ class SpectogramTransform(nn.Module):
         """
 
         x = self.spectrogram(x) #shape (..., n_fft//2 + 1, sequence_len//hop_length + 1)
-        mag = torch.abs(x)
-        #convert to log domain
-        mag = torch.log(mag + self.eps)
 
+        mag = torch.abs(x)
+        # #convert to log domain
+        if self.log:
+            print("taking log")
+            mag = torch.log(mag + self.eps)
+  
         phase = torch.angle(x)
 
         #if we are predicting phases, stack and resize
@@ -50,7 +56,7 @@ class SpectogramTransform(nn.Module):
             return x
         else:
             mag = self.resize(mag)
-            return (mag.unsqueeze(-3), phase)
+            return (mag, phase)
 
 @dataclass
 class InverseSpectogramTransform(nn.Module):
@@ -59,14 +65,16 @@ class InverseSpectogramTransform(nn.Module):
     original_size: Tuple[int, int] = (1000, 224)
     predict_phases: bool = False
     eps: float = 1e-6
+    log: bool = True
 
     def __post_init__(self):
-
+        super().__init__()
         self.istft = T_audio.InverseSpectrogram(
             n_fft=self.n_fft,
             hop_length=self.hop_length)
 
-        self.resize = T_vision.Resize(self.original_size)
+        self.resize = T_vision.Resize(self.original_size, 
+                                      interpolation=T_vision.InterpolationMode.NEAREST)
         self.tensor = torch.tensor([1.0, 1j])
 
     def forward(self, x: torch.FloatTensor,
@@ -82,11 +90,21 @@ class InverseSpectogramTransform(nn.Module):
         """
 
         #resize
-        x = self.resize(x)
+        #flatten the first and second dimensions and the resize
+        x = self.resize(x.reshape(-1, *x.shape[-2:])).reshape(*x.shape[:-2], *self.original_size)
         if self.predict_phases:
-            x = torch.exp(torch.einsum("...ijk,i -> ...jk", x, self.tensor)) #multiply by 1+1j to get the complex number
+            if self.log:
+                x = torch.exp(torch.einsum("...ijk,i -> ...jk", x, self.tensor)) #multiply by 1+1j to get the complex number
+            else:
+                x = torch.exp(x[..., 1, :, :] * 1j) * x[..., 0, :, :]
         else:
-            x = torch.exp(x.squeeze(-3) + 1j * phases)
+            if self.log:
+                x = torch.exp(1j * phases+x)
+            else:
+                x = x * torch.exp(1j * phases)
+        print("reconstructed spectogram", x)
+        assert torch.all(torch.isfinite(x)) 
         x = self.istft(x)
+        print(x)
         return x
     
