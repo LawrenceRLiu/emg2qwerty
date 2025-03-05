@@ -10,7 +10,7 @@ foundational model that can be used for other tasks as well.
 
 TODOs and potential research directions:
 - [x] Move the loss fns and spectogram transforms to seperate classes 
-- [ ] Finish two trainers, one for a foundational model and one for a downstream task, these will be based on the huggingface trainers
+- [ ] Finish two trainers, one for a foundational model and one for a downstream task, these will be based on the pytorch lightning trainer
 - [ ] Use Hydra for config management (potentially)
 - [ ] Experiment with different foundational architectures models, for example:
     - [ ] Autencoder (CNN)

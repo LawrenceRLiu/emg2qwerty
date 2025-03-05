@@ -8,9 +8,9 @@ from dataclasses import dataclass
 
 from typing import Any, Dict, List, Tuple, Union, Optional, Callable, Literal
 
-from ..utils.loss import temporal_loss, spectral_loss
-from ..utils.transforms import SpectogramTransform, InverseSpectogramTransform
-from .output import AdditionalFoundationalModelOutput
+from ...utils.loss import temporal_loss, spectral_loss
+from ...utils.transforms import SpectogramTransform, InverseSpectogramTransform
+from ..output import AdditionalFoundationalModelOutput
 #call the model ViTMAEForEMG
 
 
