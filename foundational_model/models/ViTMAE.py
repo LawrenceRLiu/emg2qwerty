@@ -102,6 +102,7 @@ class ViTMAEForEMG_PretrainingOutput(FoundationalModelOutput):
     """
     Class for ViTMAEForPreTraining's outputs, with potential hidden states and attentions.
 
+    Following from Huggingface's transformers:
     Args:
         loss (`torch.FloatTensor` of shape `(1,)`):
             Pixel reconstruction loss.
