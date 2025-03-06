@@ -4,6 +4,7 @@ from transformers.models.vit_mae.modeling_vit_mae import ViTMAEForPreTrainingOut
 
 import torch
 import torch.nn as nn
+import torchvision.transforms as T_vision
 from dataclasses import dataclass, InitVar
 import pytorch_lightning as pl
 from typing import Any, Dict, List, Tuple, Union, Optional, Callable, Literal
@@ -22,6 +23,8 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         sequence_len:int=1000,
         n_fft:int = 128,
         hop_length:int = 64,
+        reshape_size:int = 128,
+        interpolation:Union[Tuple[Literal["linear", "nearest", "cubic"]],Literal["linear", "nearest", "cubic"]] = "linear", #supports different resampling methods for transform and inverse transform
         predict_phases:bool = False, #predict the phases or just pass them along
         losses:List[Literal["temporal_all", "temporal_masked_only", "spectral_masked_only", "spectral_all"]] = ["spectral_masked_only"],
         P: Union[List[float],float] = 2, #the p-norm for the losses
@@ -54,7 +57,14 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         # print(sequence_len)  
         self.spectogram_size = (n_fft//2 + 1, sequence_len//hop_length + 1)
         print(self.spectogram_size)
-        self.reshape_size = max(self.spectogram_size)
+        self.reshape_size = max(self.spectogram_size) if reshape_size is None else reshape_size
+        
+        if reshape_size is None:
+            self.interpolation_transform = "nearest"
+            self.interpolation_inverse = "nearest"
+        else:
+            self.interpolation_transform = interpolation[0] if isinstance(interpolation, tuple) else interpolation
+            self.interpolation_inverse = interpolation[1] if isinstance(interpolation, tuple) else interpolation
         #increase until its a multiple of patch_size
         while self.reshape_size % patch_size != 0:
             self.reshape_size += 1
@@ -159,7 +169,8 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrain
             hop_length=config.hop_length,
             reshape_size=config.reshape_size,
             predict_phases=config.predict_phases,
-            log = config.log_spectogram
+            log = config.log_spectogram,
+            interpolation=config.interpolation_transform
         )
 
         self.inverse_transform = InverseSpectogramTransform(
@@ -167,7 +178,8 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrain
             hop_length=config.hop_length,
             original_size=config.spectogram_size,
             predict_phases=config.predict_phases,
-            log = config.log_spectogram
+            log = config.log_spectogram,
+            interpolation=config.interpolation_inverse
         )
         
         self.predict_phases = config.predict_phases

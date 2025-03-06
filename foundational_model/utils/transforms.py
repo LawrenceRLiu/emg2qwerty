@@ -5,6 +5,17 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Union, Optional, Callable, Literal
 
+
+def get_interpolation(name:Literal["linear", "nearest", "cubic"]) -> T_vision.InterpolationMode:
+    if name == "linear":
+        return T_vision.InterpolationMode.BILINEAR
+    elif name == "nearest":
+        return T_vision.InterpolationMode.NEAREST
+    elif name == "cubic":
+        return T_vision.InterpolationMode.BICUBIC
+    else:
+        raise ValueError(f"Unknown resampling method {name}")
+    
 # @dataclass #cannot use dataclass for this shit for some reason?
 class SpectogramTransform(nn.Module):
 
@@ -14,7 +25,8 @@ class SpectogramTransform(nn.Module):
                     reshape_size: int = 224,
                     predict_phases: bool = False,
                     eps: float = 1e-6,
-                    log: bool = True
+                    log: bool = True,
+                    interpolation:str = "nearest"
     ):
         super().__init__()  
         self.n_fft = n_fft
@@ -29,7 +41,7 @@ class SpectogramTransform(nn.Module):
             hop_length=self.hop_length,
             power=None)
         self.resize = T_vision.Resize((self.reshape_size, self.reshape_size), 
-                                      interpolation=T_vision.InterpolationMode.NEAREST)
+                                      interpolation=get_interpolation(interpolation))
 
     def __call__(self, x: torch.FloatTensor
                 ) -> Union[Tuple[torch.FloatTensor, torch.FloatTensor], torch.FloatTensor]:
@@ -73,7 +85,8 @@ class InverseSpectogramTransform(nn.Module):
                     original_size: Tuple[int, int] = (1000, 224),
                     predict_phases: bool = False,
                     eps: float = 1e-6,
-                    log: bool = True
+                    log: bool = True,
+                    interpolation:str = "nearest"
     ):
         
         super().__init__()
@@ -89,7 +102,7 @@ class InverseSpectogramTransform(nn.Module):
             hop_length=self.hop_length)
 
         self.resize = T_vision.Resize(self.original_size, 
-                                      interpolation=T_vision.InterpolationMode.NEAREST)
+                                      interpolation=get_interpolation(interpolation))
         self.tensor = torch.tensor([1.0, 1j])
 
     def forward(self, x: torch.FloatTensor,

@@ -26,7 +26,7 @@ split_yaml = "/home/lawrence/emg2qwerty/config/user/single_user.yaml"
 
 
 #args for training and stuff, should be in a config file
-window_length = 5000
+window_length = 10000
 batch_size = 32
 
 
@@ -67,9 +67,9 @@ val_dataset = ConcatDataset(val_dataset)
 test_dataset = ConcatDataset(test_dataset)
 
 #create the dataloaders
-train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True, num_workers = 8)
-val_loader = DataLoader(val_dataset, batch_size = batch_size, shuffle = False, num_workers = 8)
-test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, num_workers = 8)
+train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True, num_workers = 16)
+val_loader = DataLoader(val_dataset, batch_size = batch_size, shuffle = False, num_workers = 16)
+test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, num_workers = 16)
 
 
 #instantiate the model
@@ -77,8 +77,10 @@ model_config = ViTMAE.LightningConfig(
     ViTMAE.ViTMAEForEMGConfig(
         sequence_len = window_length,
         n_fft =  128,
-        hop_length = 32,
+        hop_length = 16,
         log_spectogram = False,
+        interpolation="linear",
+        reshape_size = 224,
         patch_size = 16,
         bottleneck_dim = 8,
         # bottleneck_activation="ReLU",
@@ -95,7 +97,7 @@ model_config = ViTMAE.LightningConfig(
         mask_ratio = 0.0,
         norm_pix_loss = True,
         losses = ["temporal_all", "spectral_all"],
-        loss_weights=[1, 0],
+        loss_weights=[0, 1],
         norm_method = "global",
     ),
     sample_log_interval=(int(len(train_loader)/4), int(len(val_loader)/4)),
@@ -107,11 +109,15 @@ model = ViTMAE.ViTMAE_Pretraining_Lightning(model_config)
 #instantiate the logger
 wandb.init(project="emg2qwerty_pretraining")
 logger = CustomPretrainLogger(project="emg2qwerty_pretraining",
-                              save_dir = "logs")
+                              save_dir = f"runs/{wandb.run.name}")
+# checkpoint_callback = pl.callbacks.ModelCheckpoint(monitor="val_accuracy", mode="max")
 
 #train
-trainer = pl.Trainer(logger = logger, gpus = 1, max_epochs = 10,
-                     default_root_dir = logger.get_dump_dir())
+os.makedirs(logger.save_dir, exist_ok = True)
+# save_path = os.path.join(logger.get_dump_dir(), "model_checkpoints")
+# os.makedirs(save_path, exist_ok = True)
+# print("saving to", save_path)
+trainer = pl.Trainer(logger = logger, gpus = 1, max_epochs = 10)
 trainer.fit(model, train_loader, val_loader)
 
 

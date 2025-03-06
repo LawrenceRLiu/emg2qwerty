@@ -15,6 +15,7 @@ from typing import List, Tuple, Union, Dict
 
 class CustomPretrainLogger(WandbLogger):
     cache: Dict[str, plt.Figure] = {}
+
     
     def log_plot_to_wandb(self,
                         fig: plt.Figure,
@@ -33,8 +34,8 @@ class CustomPretrainLogger(WandbLogger):
         if close:
             plt.close(fig)
 
-    def get_dump_dir(self):
-        return f"{self.save_dir}/{wandb.run.name}"
+    # def get_dump_dir(self):
+    #     return f"{self.save_dir}/{wandb.run.name}"
     
     def dump_cache(self, prefix: str = "",
                    save_to_disk: bool = False,
@@ -48,7 +49,7 @@ class CustomPretrainLogger(WandbLogger):
             matching_prefix (str, optional): the sub string to match. Defaults to "".
         """
 
-        prefix_use = f"{self.save_dir}/{wandb.run.name}/{prefix}"
+        prefix_use = f"{self.save_dir}/{prefix}"
         print(f"dumping cache to {prefix_use}")
         os.makedirs(prefix_use, exist_ok=True)
         cache_keys = list(self.cache.keys())
