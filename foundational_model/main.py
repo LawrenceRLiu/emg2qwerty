@@ -1,16 +1,23 @@
-import yaml
+#add the parent directory to the path so we can import the foundational_model package
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from foundational_model.models import ViTMAE
 from foundational_model.data import PretrainChannelWise_emg2qwerty
 from foundational_model.utils.custom_logger import CustomPretrainLogger
 
 import wandb
-import os
 import torch
+import yaml
 from pathlib import Path
 import torch.nn as nn
 import torch.optim as optim
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, ConcatDataset
+
+#seed the damn thing
+pl.seed_everything(42)
+
 #quick and dirty train script
 
 data_path = "./data/89335547"
@@ -72,19 +79,27 @@ model_config = ViTMAE.LightningConfig(
         n_fft =  128,
         hop_length = 32,
         log_spectogram = False,
+        patch_size = 16,
+        bottleneck_dim = 8,
+        # bottleneck_activation="ReLU",
         hidden_size = 128,
         intermediate_size = 1024,
         num_attention_heads = 8,
+        num_hidden_layers=6,
 
-        decoder_hidden_size = 128,
-        decoder_intermediate_size = 1024,
+        decoder_hidden_size = 96,
+        decoder_intermediate_size = 768,
         decoder_num_attention_heads = 8,
+        decoder_num_hidden_layers=6,
 
-        mask_ratio = 0.5,
+        mask_ratio = 0.0,
         norm_pix_loss = True,
-        # losses = ["temporal_masked_only", "spectral_masked_only"],
+        losses = ["temporal_all", "spectral_all"],
+        loss_weights=[1, 0],
+        norm_method = "global",
     ),
     sample_log_interval=(int(len(train_loader)/4), int(len(val_loader)/4)),
+    lr = 1e-4
 )
 
 model = ViTMAE.ViTMAE_Pretraining_Lightning(model_config)
@@ -95,7 +110,8 @@ logger = CustomPretrainLogger(project="emg2qwerty_pretraining",
                               save_dir = "logs")
 
 #train
-trainer = pl.Trainer(logger = logger, gpus = 1, max_epochs = 100)
+trainer = pl.Trainer(logger = logger, gpus = 1, max_epochs = 10,
+                     default_root_dir = logger.get_dump_dir())
 trainer.fit(model, train_loader, val_loader)
 
 

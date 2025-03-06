@@ -1,6 +1,6 @@
 from transformers import ViTMAEConfig, ViTMAEModel, ViTMAEForPreTraining, ViTMAEPreTrainedModel
 
-from transformers.models.vit_mae.modeling_vit_mae import ViTMAEForPreTrainingOutput
+from transformers.models.vit_mae.modeling_vit_mae import ViTMAEForPreTrainingOutput, ViTMAEDecoder
 
 import torch
 import torch.nn as nn
@@ -28,7 +28,9 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         loss_weights:Union[List[float], Literal["equal","balancing_0th_order"]] = "equal", #ToDO: allow for balancing_0th_order and potentially balancing_1st_order
         num_channels:int = 1, #number of channels in the input
         log_spectogram:bool = True,
-
+        
+        bottleneck_dim:int=256,
+        bottleneck_activation:str="Identity",
         hidden_size=768,
         num_hidden_layers=12,
         num_attention_heads=12,
@@ -46,6 +48,7 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         decoder_intermediate_size=2048,
         mask_ratio=0.75,
         norm_pix_loss=False,
+        norm_method:Literal["patch", "channel", "global"] = "patch",
         **kwargs):
 
         # print(sequence_len)  
@@ -78,6 +81,8 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
             norm_pix_loss=norm_pix_loss,
             **kwargs
         )
+        self.bottleneck_dim = bottleneck_dim
+        self.bottleneck_activation = bottleneck_activation
 
         self.losses = losses
         self.loss_weights = loss_weights
@@ -87,6 +92,7 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         self.sequence_len = sequence_len
         self.P = P
         self.log_spectogram = log_spectogram
+        self.norm_method = norm_method  
 
 
 # @dataclass
@@ -128,18 +134,26 @@ class ViTMAEForEMG_PretrainingOutput(FoundationalModelOutput):
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
 
-class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel):
+class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrainedModel):
 
 
     def __init__(self, config: ViTMAEForEMGConfig):
 
-        super().__init__(config)
+        ViTMAEPreTrainedModel.__init__(self, config)
         self.config = config
 
+
         self.vit = ViTMAEModel(config)
-    
+        self.decoder = ViTMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
+        #add a bottleneck layer
+        self.bottleneck = nn.Linear(config.hidden_size, config.bottleneck_dim)
+        self.bottleneck_activation = getattr(nn, config.bottleneck_activation)()
 
+        #modify the embedding layer of the decoder to take in the bottleneck layer
+        self.decoder.decoder_embed = nn.Linear(config.bottleneck_dim, config.decoder_hidden_size)
 
+        # Initialize weights and apply final processing
+        self.post_init()
         self.forward_transform = SpectogramTransform(
             n_fft=config.n_fft,
             hop_length=config.hop_length,
@@ -176,18 +190,30 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel):
 
         self.sequence_len = config.sequence_len
 
-    @staticmethod
-    def denorm_patches(predicted_patches: torch.FloatTensor, input_image_patches: torch.FloatTensor) -> torch.FloatTensor:
+    # @staticmethod
+    def denorm_patches(self,predicted_patches: torch.FloatTensor, input_image_patches: torch.FloatTensor) -> torch.FloatTensor:
 
         #denorm the predicted patches
-        mean = input_image_patches.mean(dim=-1, keepdim=True)
-        var = input_image_patches.var(dim=-1, keepdim=True)
+        if self.config.norm_method == "patch":
+            mean = input_image_patches.mean(dim=-1, keepdim=True)
+            var = input_image_patches.var(dim=-1, keepdim=True)
+        elif self.config.norm_method == "channel":
+            raise NotImplementedError("Channel normalization not implemented yet")
+        elif self.config.norm_method == "global":
+            mean = input_image_patches.mean(dim = (-2,-1), keepdim=True)
+            var = input_image_patches.var(dim = (-2,-1), keepdim=True)
         return predicted_patches * (var + 1.0e-6) ** 0.5 + mean
 
-    @staticmethod
-    def norm_input(input_image_patches: torch.FloatTensor) -> torch.FloatTensor:
-        mean = input_image_patches.mean(dim=-1, keepdim=True)
-        var = input_image_patches.var(dim=-1, keepdim=True)
+    # @staticmethod
+    def norm_input(self,input_image_patches: torch.FloatTensor) -> torch.FloatTensor:
+        if self.config.norm_method == "patch":
+            mean = input_image_patches.mean(dim=-1, keepdim=True)
+            var = input_image_patches.var(dim=-1, keepdim=True)
+        elif self.config.norm_method == "channel":
+            raise NotImplementedError("Channel normalization not implemented yet")
+        elif self.config.norm_method == "global":
+            mean = input_image_patches.mean(dim = (-2,-1), keepdim=True)
+            var = input_image_patches.var(dim = (-2,-1), keepdim=True)
         return (input_image_patches - mean) / (var + 1.0e-6) ** 0.5
 
     def temporal_loss_all(self, predicted_patches: torch.FloatTensor,
@@ -217,7 +243,7 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel):
         """
 
         if self.config.norm_pix_loss and denorm:
-            predicted_patches = self.denorm_patches(predicted_patches, input_image)
+            predicted_patches = self.denorm_patches(predicted_patches, self.patchify(input_image, interpolate_pos_encoding=interpolate_pos_encoding))
 
         #convert the patches to the original image size
         predicted_spectogram = self.unpatchify(predicted_patches)
@@ -328,8 +354,10 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel):
             weight = self.loss_weights[loss_name]
             p = self.P[i]
             if loss_name == "temporal_all":
+                # print("predicted_patches.shape", predicted_patches.shape)
                 l = self.temporal_loss_all(predicted_patches, mask, input_image, input_sequence, phases, interpolate_pos_encoding, p = p) 
             elif loss_name == "temporal_masked_only":
+                # print("predicted_patches.shape", predicted_patches.shape)
                 l = self.temporal_loss_masked(predicted_patches, mask, input_image, input_sequence, phases, interpolate_pos_encoding, p = p) 
             elif loss_name == "spectral_masked_only":
                 l = self.spectral_loss_masked(predicted_patches, mask, input_image, interpolate_pos_encoding, p = p)
@@ -337,9 +365,9 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel):
                 l = self.spectral_loss_all(predicted_patches, input_image, interpolate_pos_encoding, p = p)
             else:
                 raise ValueError(f"Unknown loss {loss_name}")
-            
-            loss += weight * l
-            loss_dict[loss_name] = (l, weight)
+            if weight > 0:
+                loss += weight * l #allows us to use some losses for logging only
+            loss_dict[loss_name] = (l.item(), weight)
         
         if self.loss_weights_type != "constant":
             raise NotImplementedError("Balancing methods not implemented yet")
@@ -379,6 +407,10 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel):
         )
 
         latent = outputs.last_hidden_state
+        #push the latent representation through the bottleneck layer
+        latent = self.bottleneck(latent)
+        latent = self.bottleneck_activation(latent)
+
         ids_restore = outputs.ids_restore
         mask = outputs.mask
 

@@ -8,7 +8,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from io import BytesIO
 import os
-from wand.image import Image
 from torch import nn
 from lightning.pytorch.loggers import Logger, WandbLogger
 from lightning.pytorch.utilities import rank_zero_only
@@ -34,6 +33,9 @@ class CustomPretrainLogger(WandbLogger):
         if close:
             plt.close(fig)
 
+    def get_dump_dir(self):
+        return f"{self.save_dir}/{wandb.run.name}"
+    
     def dump_cache(self, prefix: str = "",
                    save_to_disk: bool = False,
                    dump_matched_only: bool = False,
