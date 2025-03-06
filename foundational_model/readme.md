@@ -11,14 +11,16 @@ foundational model that can be used for other tasks as well.
 TODOs and potential research directions:
 - [x] Move the loss fns and spectogram transforms to seperate classes 
 - [ ] Finish two trainers, one for a foundational model and one for a downstream task, these will be based on the pytorch lightning trainer
+    - [x] Foundational model trainer
+    - [ ] Downstream task trainer (look into how to freeze the weights of the foundational model)
 - [ ] Use Hydra for config management (potentially)
 - [ ] Experiment with different foundational architectures models, for example:
     - [ ] Autencoder (CNN)
     - [ ] VAE (CNN) (Daniel)
-    - [ ] ViTMAE (Lawrence)
+    - [x] ViTMAE (Lawrence)
     - [ ] VLLM (Manik)
 - [ ] Experiment with different loss functions and training stuff, for example:
-    - [ ] Channel wise foundational model (compress each channel separately)
+    - [x] Channel wise foundational model (compress each channel separately)
     - [ ] Handwise foundational model (compress each hand separately)
     - [ ] Moving beyond MSE for Spectogram reconstruction loss, for example VGG loss
 - [ ] Agree on a format between the foundational model and the downstream task

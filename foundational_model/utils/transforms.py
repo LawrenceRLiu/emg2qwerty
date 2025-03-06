@@ -5,17 +5,25 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Union, Optional, Callable, Literal
 
-@dataclass
+# @dataclass #cannot use dataclass for this shit for some reason?
 class SpectogramTransform(nn.Module):
-    n_fft: int = 64
-    hop_length: int = 16
-    reshape_size: int = 224
-    predict_phases: bool = False
-    eps: float = 1e-6
-    log: bool = True
 
-    def __post_init__(self):
+    def __init__(self,
+                    n_fft: int = 64,
+                    hop_length: int = 16,
+                    reshape_size: int = 224,
+                    predict_phases: bool = False,
+                    eps: float = 1e-6,
+                    log: bool = True
+    ):
         super().__init__()  
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.reshape_size = reshape_size
+        self.predict_phases = predict_phases
+        self.eps = eps
+        self.log = log
+
         self.spectrogram = T_audio.Spectrogram(
             n_fft=self.n_fft,
             hop_length=self.hop_length,
@@ -23,28 +31,26 @@ class SpectogramTransform(nn.Module):
         self.resize = T_vision.Resize((self.reshape_size, self.reshape_size), 
                                       interpolation=T_vision.InterpolationMode.NEAREST)
 
-    def forward(self, x: torch.FloatTensor
+    def __call__(self, x: torch.FloatTensor
                 ) -> Union[Tuple[torch.FloatTensor, torch.FloatTensor], torch.FloatTensor]:
         """performs the spectogram on the input waveform
 
         Args:
-            x (torch.FloatTensor): the waveform of shape (..., Seq_length)
+            x (torch.FloatTensor): the waveform of shape (..., n_channels, sequence_len)
 
         Returns:
             if predict_phases:
-                torch.FloatTensor: the magnitude spectrogram of shape (..., 2, reshape_size, reshape_size) where 
+                torch.FloatTensor: the magnitude spectrogram of shape (..., 2*n_channels, reshape_size, reshape_size) where 
                 the first channel is the magnitude and the second channel is the phase
             else:
-                torch.FloatTensor: the magnitude spectrogram of shape (..., 1, reshape_size, reshape)
-                torch.FloatTensor: the phase spectrogram of shape (..., 1, n_fft//2 + 1, sequence_len//hop_length + 1)
+                torch.FloatTensor: the magnitude spectrogram of shape (..., n_channels, reshape_size, reshape)
+                torch.FloatTensor: the phase spectrogram of shape (..., n_channels, n_fft//2 + 1, sequence_len//hop_length + 1)
         """
-
-        x = self.spectrogram(x) #shape (..., n_fft//2 + 1, sequence_len//hop_length + 1)
+        x = self.spectrogram(x) #shape (...,n_channels, n_fft//2 + 1, sequence_len//hop_length + 1)
 
         mag = torch.abs(x)
         # #convert to log domain
         if self.log:
-            print("taking log")
             mag = torch.log(mag + self.eps)
   
         phase = torch.angle(x)
@@ -52,23 +58,32 @@ class SpectogramTransform(nn.Module):
         #if we are predicting phases, stack and resize
         if self.predict_phases:
             x = torch.stack([mag, phase], dim=-3)
+            x = x.reshape(*x.shape[:-3], 2*x.shape[-3], *x.shape[-2:])
             x = self.resize(x)
             return x
         else:
             mag = self.resize(mag)
             return (mag, phase)
 
-@dataclass
+# @dataclass
 class InverseSpectogramTransform(nn.Module):
-    n_fft: int = 64
-    hop_length: int = 16
-    original_size: Tuple[int, int] = (1000, 224)
-    predict_phases: bool = False
-    eps: float = 1e-6
-    log: bool = True
 
-    def __post_init__(self):
+    def __init__(self, n_fft: int = 64,
+                    hop_length: int = 16,
+                    original_size: Tuple[int, int] = (1000, 224),
+                    predict_phases: bool = False,
+                    eps: float = 1e-6,
+                    log: bool = True
+    ):
+        
         super().__init__()
+
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.original_size = original_size
+        self.predict_phases = predict_phases
+        self.eps = eps
+        self.log = log
         self.istft = T_audio.InverseSpectrogram(
             n_fft=self.n_fft,
             hop_length=self.hop_length)
@@ -83,28 +98,27 @@ class InverseSpectogramTransform(nn.Module):
         """_summary_
 
         Args:
-            x (torch.FloatTensor): either the predicted magnitude spectrogram of shape (..., 1, reshape_size, reshape_size) or the predicted waveform spectogram of shape (..., 2, reshape_size, reshape_size)
+            x (torch.FloatTensor): either the predicted magnitude spectrogram of shape (..., 1 * n_channels, reshape_size, reshape_size) or the predicted waveform spectogram of shape (..., 2 * n_channels, reshape_size, reshape_size)
             phases (Optional[torch.FloatTensor], optional): the phase spectrogram of shape (..., 1, n_fft//2 + 1, sequence_len//hop_length + 1). Defaults to None, necessary if predict_phases is False.
         Returns:
             torch.FloatTensor: the waveform of shape (..., Seq_length)
         """
 
         #resize
-        #flatten the first and second dimensions and the resize
-        x = self.resize(x.reshape(-1, *x.shape[-2:])).reshape(*x.shape[:-2], *self.original_size)
+        x = self.resize(x)
         if self.predict_phases:
+            x_use = x.view(*x.shape[:-3], x.shape[-3]//2, 2, x.shape[-2], x.shape[-1]) #shape (..., n_channels, 2, reshape_size, reshape_size)
             if self.log:
-                x = torch.exp(torch.einsum("...ijk,i -> ...jk", x, self.tensor)) #multiply by 1+1j to get the complex number
+                x = torch.exp(torch.einsum("...ijk,i -> ...jk", x_use, self.tensor)) #multiply by 1+1j to get the complex number
             else:
-                x = torch.exp(x[..., 1, :, :] * 1j) * x[..., 0, :, :]
+                x = torch.exp(x_use[...,1,:,:] * 1j) * x_use[...,0,:,:]
         else:
             if self.log:
                 x = torch.exp(1j * phases+x)
             else:
                 x = x * torch.exp(1j * phases)
-        print("reconstructed spectogram", x)
         assert torch.all(torch.isfinite(x)) 
         x = self.istft(x)
-        print(x)
+        # print("output shape", x.shape)
         return x
     

@@ -7,6 +7,7 @@ def temporal_loss(reconstructed_waveform:torch.FloatTensor,
                   original_waveform:torch.FloatTensor,
                   mask:Optional[Union[torch.FloatTensor, torch.BoolTensor]]=None,
                   p:Union[int, float]=2,
+                  normalized:bool=True,
                   )->torch.FloatTensor:
     """Compute the temporal loss between the reconstructed and original signals, using the p-norm.
     If we have a mask, we will only consider the loss on the masked values. Reconstructed waveform may be 
@@ -19,7 +20,7 @@ def temporal_loss(reconstructed_waveform:torch.FloatTensor,
         mask (Optional[Union[torch.FloatTensor, torch.BoolTensor]], optional): the mask, only idxs that are true/1.0 are calculated. Defaults to None, if 
             None, all idxs are calculated. otherwise assumed to be of shape (..., N_samples_original)
         p (Union[int, float], optional): p of the norm. Defaults to 2.
-
+        normalized (bool, optional): whether to normalize the loss by the norm of the original waveform. Defaults to True.
     Returns:
         torch.FloatTensor: loss of shape (1,)
     """
@@ -27,11 +28,18 @@ def temporal_loss(reconstructed_waveform:torch.FloatTensor,
     errors = reconstructed_waveform - original_waveform[..., :reconstructed_waveform.shape[-1]]
     if mask is not None:
         errors = errors * mask[..., :reconstructed_waveform.shape[-1]]
-    loss = (torch.abs(errors)**p if p != 2 else errors**2).sum()
-    if mask is not None:
-        loss = loss / mask.sum()
+    loss = (torch.abs(errors)**p).sum()
+
+    if normalized:
+        if mask is not None:
+            loss = loss / torch.sum(torch.abs(reconstructed_waveform * mask[..., :reconstructed_waveform.shape[-1]])**p)
+        else:
+            loss = loss / torch.sum(torch.abs(reconstructed_waveform)**p)
     else:
-        loss = loss / reconstructed_waveform.numel()
+        if mask is not None:
+            loss = loss / mask.sum()
+        else:
+            loss = loss / reconstructed_waveform.numel()
     
     return loss
 

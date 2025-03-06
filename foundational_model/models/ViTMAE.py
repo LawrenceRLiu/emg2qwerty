@@ -1,11 +1,11 @@
-from transformers import ViTMAEConfig, ViTMAEModel, ViTMAEForPreTraining
+from transformers import ViTMAEConfig, ViTMAEModel, ViTMAEForPreTraining, ViTMAEPreTrainedModel
 
-from transformers.models.vit_mae.modeling_vit_mae import ViTMAEForPreTrainingOutput
+from transformers.models.vit_mae.modeling_vit_mae import ViTMAEForPreTrainingOutput, ViTMAEDecoder
 
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-import lightning as L
+from dataclasses import dataclass, InitVar
+import pytorch_lightning as pl
 from typing import Any, Dict, List, Tuple, Union, Optional, Callable, Literal
 
 from ..utils.loss import temporal_loss, spectral_loss
@@ -50,12 +50,12 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
 
         # print(sequence_len)  
         self.spectogram_size = (n_fft//2 + 1, sequence_len//hop_length + 1)
-        # print(self.spectogram_size)
+        print(self.spectogram_size)
         self.reshape_size = max(self.spectogram_size)
         #increase until its a multiple of patch_size
         while self.reshape_size % patch_size != 0:
             self.reshape_size += 1
-        # print(self.reshape_size)
+        print(self.reshape_size)
         super().__init__(
             hidden_size=hidden_size,
             num_hidden_layers=num_hidden_layers,
@@ -88,7 +88,6 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         self.P = P
         self.log_spectogram = log_spectogram
 
-    
 
 
 @dataclass
@@ -97,11 +96,17 @@ class ViTMAEForEMG_PretrainingOutput(ViTMAEForPreTrainingOutput, AdditionalFound
     input_specs: Optional[torch.FloatTensor] = None
     input_waveforms: Optional[torch.FloatTensor] = None
 
-class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining):
+class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ViTMAEPreTrainedModel):
 
 
     def __init__(self, config: ViTMAEForEMGConfig):
+
         super().__init__(config)
+        self.config = config
+
+        self.vit = ViTMAEModel(config)
+        self.decoder = ViTMAEDecoder(config, num_patches=self.vit.embeddings.num_patches)
+
 
         self.forward_transform = SpectogramTransform(
             n_fft=config.n_fft,
@@ -187,7 +192,7 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining):
         #convert the predicted spectogram to the waveform
         predicted_waveform = self.inverse_transform(predicted_spectogram, phases)
         #calculate the loss
-        loss = temporal_loss(predicted_waveform, input_sequence, mask, p=p)
+        loss = temporal_loss(predicted_waveform, input_sequence, p=p)
         return loss
     
     def temporal_loss_masked(self, predicted_patches: torch.FloatTensor,
@@ -274,22 +279,22 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining):
         
         return spectral_loss(predicted_patches, input_patches, mask, p=p)
         
-    def patchify(self, input_image: torch.FloatTensor, interpolate_pos_encoding: Optional[bool] = False) -> torch.FloatTensor:
-        """Patchify to handle the shape of the input image which is of shape (..., num_channels, 2|1, height, width)
-        """
-        #reshape the input by combining the -4 and -3 dimensions
-        input_image = input_image.view(input_image.shape[:-4] + (-1,) + input_image.shape[-2:])
-        
-        #call the patchify function
-        return super().patchify(input_image, interpolate_pos_encoding=interpolate_pos_encoding)
+    # def patchify(self, input_image: torch.FloatTensor, interpolate_pos_encoding: Optional[bool] = False) -> torch.FloatTensor:
+    #     """Patchify to handle the shape of the input image which is of shape (..., num_channels, 2|1, height, width)
+    #     """
+    #     print("input image shape", input_image.shape)
+    #     #reshape the input by combining the -4 and -3 dimensions
+    #     print("reshaped input image shape", input_image.view(input_image.shape[:-4] + (-1,) + input_image.shape[-2:]).shape)
+    #     #call the patchify function
+    #     return super().patchify(input_image.view(input_image.shape[:-4] + (-1,) + input_image.shape[-2:]), interpolate_pos_encoding=interpolate_pos_encoding)
 
-    def unpatchify(self, patches: torch.FloatTensor) -> torch.FloatTensor:
-        """Unpatchify to handle the shape of the input image which is of shape (..., num_channels, 2|1, height, width)
-        """
-        #call the unpatchify function
-        patches = super().unpatchify(patches)
-        #reshape the patches to the original shape
-        return patches.view(patches.shape[:-2] + (self.config.num_channels, -1) + patches.shape[-2:])
+    # def unpatchify(self, patches: torch.FloatTensor) -> torch.FloatTensor:
+    #     """Unpatchify to handle the shape of the input image which is of shape (..., num_channels, 2|1, height, width)
+    #     """
+    #     #call the unpatchify function
+    #     patches = super().unpatchify(patches)
+    #     #reshape the patches to the original shape
+    #     return patches.view(patches.shape[:-2] + (self.config.num_channels, -1) + patches.shape[-2:])
 
     
     def forward_loss(self, predicted_patches:torch.FloatTensor,
@@ -303,9 +308,9 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining):
 
         loss = 0
         loss_dict = {}
-        for loss_name in self.losses:
+        for i,loss_name in enumerate(self.losses):
             weight = self.loss_weights[loss_name]
-            p = self.P 
+            p = self.P[i]
             if loss_name == "temporal_all":
                 l = self.temporal_loss_all(predicted_patches, mask, input_image, input_sequence, phases, interpolate_pos_encoding, p = p) 
             elif loss_name == "temporal_masked_only":
@@ -365,14 +370,14 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining):
         logits = decoder_outputs.logits  # shape (batch_size, num_patches, patch_size*patch_size*num_channels)
 
         loss, loss_dict = self.forward_loss(logits, mask, input_specs, input_waveforms, phases, interpolate_pos_encoding)
-
+        # raise ValueError("stop here")
         if not return_dict:
             output = ((logits, mask, ids_restore) + outputs[2:] + (loss_dict)) if loss is not None else (logits, mask, ids_restore) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
         return ViTMAEForEMG_PretrainingOutput(
             loss=loss,
-            loss_dict=loss_dict,
+            losses=loss_dict,
             logits=logits,
             mask=mask,
             ids_restore=ids_restore,
@@ -387,11 +392,11 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining):
 class LightningConfig(ViTMAEForEMGConfig):
     def __init__(self, optimizer_name: str = "Adam",
                     lr: float = 1e-4,
-                    scheduler_name: str = "LambdaLR",
+                    scheduler_name: str = "none",
                     scheduler_kwargs: Dict[str, Any] = {},
                     sample_log_interval: Union[int, Tuple[int,int]] = 100, 
                     #tuple allows us to pick different logging intervals for train and val
-                    log_one_sample: bool = False,
+                    log_one_sample: bool = True,
                     #log one sample of the input and output spectograms or all the samples in a batch,
                     **kwargs):
             super().__init__(**kwargs)
@@ -401,9 +406,9 @@ class LightningConfig(ViTMAEForEMGConfig):
             self.scheduler_kwargs = scheduler_kwargs
             self.sample_log_interval_train = sample_log_interval[0] if isinstance(sample_log_interval, tuple) else sample_log_interval
             self.sample_log_interval_val = sample_log_interval[1] if isinstance(sample_log_interval, tuple) else sample_log_interval
-                 
+            self.log_one_sample = log_one_sample
 
-class ViTMAE_Pretraining_Lightning(L.LightningModule):
+class ViTMAE_Pretraining_Lightning(pl.LightningModule):
     def __init__(self, LightningConfig: LightningConfig):
                  
         super().__init__()
@@ -426,13 +431,13 @@ class ViTMAE_Pretraining_Lightning(L.LightningModule):
         output = []
 
         #get the input spectograms
-        input_specs = model_output.input_specs #shape of (batch_size, n_channels, 2|1, height, width)
+        input_specs = model_output.input_specs.detach().cpu() #shape of (batch_size, n_channels * (2|1), height, width)
         #get the model output
         reconstructed_patches = model_output.logits #shape of (batch_size, num_patches, patch_size*patch_size*num_channels)
         mask = model_output.mask #shape of (batch_size, num_patches)
 
         #unpatchify the patches
-        reconstructed_specs = self.model.unpatchify(reconstructed_patches)
+        reconstructed_specs = self.model.unpatchify(reconstructed_patches).detach().cpu()
         #check that it is the same size as the input specs
         assert reconstructed_specs.shape == input_specs.shape, "The reconstructed spectogram is not the same size as the input spectogram"
         #denorm the patches
@@ -440,12 +445,13 @@ class ViTMAE_Pretraining_Lightning(L.LightningModule):
             reconstructed_specs = self.model.denorm_patches(reconstructed_specs, input_specs)
         
         #depatchify the mask
-        mask = self.model.unpatchify(mask.unsqueeze(-1).expand(-1, -1, input_specs.shape[-2] * input_specs.shape[-1])) #shape of (batch_size, n_channels, 2|1, height, width)
+        mask = self.model.unpatchify(mask.unsqueeze(-1).repeat(1,1,reconstructed_patches.shape[-1])).detach().cpu() #shape of (batch_size, n_channels * (2|1), height, width)
 
-        #flatten the 2nd and 3rd dimensions for all the tensors
-        input_specs = input_specs.reshape(input_specs.shape[0], -1, input_specs.shape[-3:]).detach().cpu()
-        reconstructed_specs = reconstructed_specs.reshape(reconstructed_specs.shape[0], -1, reconstructed_specs.shape[-3:]).detach().cpu()
-        mask = mask.reshape(mask.shape[0], -1, mask.shape[-3:]).detach().cpu() #not sure if we need to detach \shrug lol
+        # #flatten the 2nd and 3rd dimensions for all the tensors
+        # print(input_specs.shape)
+        # # input_specs = input_specs.reshape(input_specs.shape[0], -1, input_specs.shape[-3:]).detach().cpu()
+        # # reconstructed_specs = reconstructed_specs.reshape(reconstructed_specs.shape[0], -1, reconstructed_specs.shape[-3:]).detach().cpu()
+        # # mask = mask.reshape(mask.shape[0], -1, mask.shape[-3:]).detach().cpu() #not sure if we need to detach \shrug lol
 
         channel_names = ["mag"] if not self.model.predict_phases else ["mag", "phase"]
 
@@ -507,27 +513,28 @@ class ViTMAE_Pretraining_Lightning(L.LightningModule):
         return output
 
     
-    def log_spectograms_and_waveforms(self, model_output: ViTMAEForEMG_PretrainingOutput):
+    def log_spectograms_and_waveforms(self, model_output: ViTMAEForEMG_PretrainingOutput,
+                                      mode: Literal["train","val"] = "train") -> None:
 
         spectograms = self.reconstruct_spectograms(model_output)
         #log the waveforms
         waveforms = self.reconstruct_waveforms(model_output)
 
         if self.config.log_one_sample:
-            self.logger.log_spectograms(*spectograms[0], plot_name="train_spectograms")
-            self.logger.log_waveforms(*waveforms[0], plot_name="train_waveforms")
+            self.logger.log_spectograms(*spectograms[0], plot_name=f"{mode}_spectograms")
+            self.logger.log_waveforms(*waveforms[0], plot_name=f"{mode}_waveforms")
         else:
             specs_plot, names_plot = [], []
             for i, (s, n) in enumerate(spectograms):
                 specs_plot += s
                 names_plot += [name_plot + f"_{i}" for name_plot in n]
-            self.logger.log_spectograms(specs_plot, names_plot, plot_name="train_spectograms")
+            self.logger.log_spectograms(specs_plot, names_plot, plot_name=f"{mode}_spectograms")
 
             waveforms_plot, names_plot = [], []
             for i, (w, n) in enumerate(waveforms):
                 waveforms_plot += w
                 names_plot += [name_plot + f"_{i}" for name_plot in n]
-            self.logger.log_waveforms(waveforms_plot, names_plot, plot_name="train_waveforms")
+            self.logger.log_waveforms(waveforms_plot, names_plot, plot_name=f"{mode}_waveforms")
             
         
 
@@ -537,29 +544,40 @@ class ViTMAE_Pretraining_Lightning(L.LightningModule):
         loss = out.loss
         self.log("train_loss", loss)
         if batch_idx % self.config.sample_log_interval_train == 0:
-            self.log_spectograms_and_waveforms(out)
+            self.log_spectograms_and_waveforms(out, mode=f"train_{batch_idx}")
         return loss
 
     def validation_step(self, batch: Tuple[torch.FloatTensor, torch.FloatTensor], batch_idx: int) -> torch.FloatTensor:
-        x, _ = batch
+        x = batch["emg"]
         out= self.model(x)
         loss = out.loss
         self.log("val_loss", loss)
         if batch_idx % self.config.sample_log_interval_val == 0:
-            self.log_spectograms_and_waveforms(out)
+            self.log_spectograms_and_waveforms(out, mode = f"val_{batch_idx}")
+        return loss
+    
+    def test_step(self, batch: Tuple[torch.FloatTensor, torch.FloatTensor], batch_idx: int) -> torch.FloatTensor:
+        x = batch["emg"]
+        out= self.model(x)
+        loss = out.loss
+        self.log("test_loss", loss)
         return loss
 
     #at the end of the epoch, log the metrics
-    def on_train_epoch_end(self, outputs: List[torch.FloatTensor]) -> None:
-        self.logger.dump_cache(prefix="train_", save_to_disk=True)
+    def on_train_epoch_end(self) -> None:
+        self.logger.dump_cache(prefix=f"train_plots/{self.current_epoch}", save_to_disk=True,
+                                 dump_matched_only= True, matching_substr = f"train")
 
     def on_validation_epoch_end(self) -> None:
-        self.logger.dump_cache(prefix="val_", save_to_disk=True)
+        self.logger.dump_cache(prefix=f"val_plots/{self.current_epoch}", save_to_disk=True,
+                               dump_matched_only= True, matching_substr = f"val")
 
 
     def configure_optimizers(self) -> dict[str, Any]:
         #this is slightly wrong but I am too tired to fix it
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.config.lr)
+        if self.config.scheduler_name == "none":
+            return {"optimizer": optimizer}
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, **self.config.scheduler_kwargs)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
     
