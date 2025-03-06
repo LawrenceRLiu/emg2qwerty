@@ -67,21 +67,23 @@ test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False,
 
 #instantiate the model
 model_config = ViTMAE.LightningConfig(
-    sequence_len = window_length,
-    n_fft =  128,
-    hop_length = 32,
-    log_spectogram = False,
-    hidden_size = 128,
-    intermediate_size = 1024,
-    num_attention_heads = 8,
+    ViTMAE.ViTMAEForEMGConfig(
+        sequence_len = window_length,
+        n_fft =  128,
+        hop_length = 32,
+        log_spectogram = False,
+        hidden_size = 128,
+        intermediate_size = 1024,
+        num_attention_heads = 8,
 
-    decoder_hidden_size = 128,
-    decoder_intermediate_size = 1024,
-    decoder_num_attention_heads = 8,
-    
-    mask_ratio = 0.5,
-    norm_pix_loss = True,
-    # losses = ["temporal_masked_only", "spectral_masked_only"],
+        decoder_hidden_size = 128,
+        decoder_intermediate_size = 1024,
+        decoder_num_attention_heads = 8,
+
+        mask_ratio = 0.5,
+        norm_pix_loss = True,
+        # losses = ["temporal_masked_only", "spectral_masked_only"],
+    ),
     sample_log_interval=(int(len(train_loader)/4), int(len(val_loader)/4)),
 )
 
