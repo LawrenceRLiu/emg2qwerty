@@ -98,11 +98,34 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
 #     losses:Optional[Dict[str, Tuple[float, float]]]
 
 @dataclass
-class ViTMAEForEMG_PretrainingOutput(ViTMAEForPreTrainingOutput):
-    losses:Optional[Dict[str, Tuple[float, float]]] = None
-    input_waveforms: Optional[torch.FloatTensor]  = None #the input waveform
-    input_specs: Optional[torch.FloatTensor] = None #the input spectrogram
-    phases: Optional[torch.FloatTensor] = None #the phases of the input spectrogram
+class ViTMAEForEMG_PretrainingOutput(FoundationalModelOutput):
+    """
+    Class for ViTMAEForPreTraining's outputs, with potential hidden states and attentions.
+
+    Args:
+        loss (`torch.FloatTensor` of shape `(1,)`):
+            Pixel reconstruction loss.
+        logits (`torch.FloatTensor` of shape `(batch_size, sequence_length, patch_size ** 2 * num_channels)`):
+            Pixel reconstruction logits.
+        mask (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
+            Tensor indicating which patches are masked (1) and which are not (0).
+        ids_restore (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
+            Tensor containing the original index of the (shuffled) masked patches.
+        hidden_states (`tuple(torch.FloatTensor)`, *optional*, returned when `output_hidden_states=True` is passed or when `config.output_hidden_states=True`):
+            Tuple of `torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer) of
+            shape `(batch_size, sequence_length, hidden_size)`. Hidden-states of the model at the output of each layer
+            plus the initial embedding outputs.
+        attentions (`tuple(torch.FloatTensor)`, *optional*, returned when `output_attentions=True` is passed or when `config.output_attentions=True`):
+            Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
+            sequence_length)`. Attentions weights after the attention softmax, used to compute the weighted average in
+            the self-attention heads.
+    """
+
+    logits: torch.FloatTensor = None
+    mask: torch.LongTensor = None
+    ids_restore: torch.LongTensor = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel):
 
