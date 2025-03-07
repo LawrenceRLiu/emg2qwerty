@@ -22,7 +22,7 @@ pl.seed_everything(42)
 
 data_path = "./data/89335547"
 
-split_yaml = "/home/lawrence/emg2qwerty/config/user/single_user.yaml"
+split_yaml = "./config/user/single_user.yaml"
 
 
 #args for training and stuff, should be in a config file
