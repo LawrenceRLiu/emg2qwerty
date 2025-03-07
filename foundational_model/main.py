@@ -22,7 +22,7 @@ pl.seed_everything(42)
 
 data_path = "./data/89335547"
 
-split_yaml = "/home/lawrence/emg2qwerty/config/user/single_user.yaml"
+split_yaml = "./config/user/single_user.yaml"
 
 
 #args for training and stuff, should be in a config file
@@ -67,9 +67,9 @@ val_dataset = ConcatDataset(val_dataset)
 test_dataset = ConcatDataset(test_dataset)
 
 #create the dataloaders
-train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True, num_workers = 16)
-val_loader = DataLoader(val_dataset, batch_size = batch_size, shuffle = False, num_workers = 16)
-test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, num_workers = 16)
+train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True, num_workers = 0)
+val_loader = DataLoader(val_dataset, batch_size = batch_size, shuffle = False, num_workers = 0)
+test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, num_workers = 0)
 
 
 #instantiate the model
@@ -117,7 +117,7 @@ os.makedirs(logger.save_dir, exist_ok = True)
 # save_path = os.path.join(logger.get_dump_dir(), "model_checkpoints")
 # os.makedirs(save_path, exist_ok = True)
 # print("saving to", save_path)
-trainer = pl.Trainer(logger = logger, gpus = 1, max_epochs = 10)
+trainer = pl.Trainer(logger = logger, max_epochs = 10)
 trainer.fit(model, train_loader, val_loader)
 
 
