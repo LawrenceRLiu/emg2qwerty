@@ -18,7 +18,7 @@ TODOs and potential research directions:
     - [ ] Autencoder (CNN)
     - [ ] VAE (CNN) (Daniel)
     - [x] ViTMAE (Lawrence)
-    - [ ] VLLM (Manik)
+    - [x] ViTVAE (Manik)
 - [ ] Experiment with different loss functions and training stuff, for example:
     - [x] Channel wise foundational model (compress each channel separately)
     - [ ] Handwise foundational model (compress each hand separately)
