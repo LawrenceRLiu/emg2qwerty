@@ -59,6 +59,8 @@ def main(config: DictConfig):
         return transforms.Compose([instantiate(cfg) for cfg in configs])
 
     # Instantiate LightningModule
+    # print(config["model"])
+    print("config:", config.keys())
     log.info(f"Instantiating LightningModule {config.module}")
     module = instantiate(
         config.module,
@@ -109,7 +111,7 @@ def main(config: DictConfig):
 
     if config.train:
         # Check if a past checkpoint exists to resume training from
-        checkpoint_dir = Path.cwd().joinpath("checkpoints")
+        checkpoint_dir = Path(wandb_logger.save_dir) / "checkpoints"
         resume_from_checkpoint = utils.get_last_checkpoint(checkpoint_dir)
         if resume_from_checkpoint is not None:
             log.info(f"Resuming training from checkpoint {resume_from_checkpoint}")

@@ -1,7 +1,7 @@
 defaults:
   - user: single_user
-  - transforms: log_spectrogram_ours
-  - model: tds_conv_ctc
+  - transforms: downstream_transforms
+  - model: downstream
   - optimizer: adam
   - lr_scheduler: linear_warmup_cosine_annealing
   - decoder: ctc_greedy
@@ -33,7 +33,7 @@ callbacks:
     verbose: True
 
 dataset:
-  root: ${hydra:runtime.cwd}/data
+  root: ${hydra:runtime.cwd}/data/89335547
 
 hydra:
   run:
