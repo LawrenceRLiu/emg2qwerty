@@ -15,7 +15,6 @@ from typing import List, Tuple, Union, Dict
 
 class CustomPretrainLogger(WandbLogger):
     cache: Dict[str, plt.Figure] = {}
-
     
     def log_plot_to_wandb(self,
                         fig: plt.Figure,

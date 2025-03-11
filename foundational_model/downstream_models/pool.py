@@ -1,14 +1,22 @@
 import torch
 import torch.nn as nn
 
-from .utils import make_mlp
 
-#different pooling methods
+from omegaconf import DictConfig
+from hydra.utils import instantiate
+from typing import List, Optional, Dict
+
+
+from .utils import MLP
+
+#different pooling methods, all have embedding_size as input
 
 class AvgPool(nn.Module):
     """averages across the channels"""
 
-    def __init__(self):
+    def __init__(self,
+                 embedding_size:int):
+
         super().__init__()
         self.pool = nn.AvgPool1d(kernel_size=1, stride=1)
 
@@ -22,7 +30,8 @@ class MaxPool(nn.Module):
 
     """max across the channels"""
 
-    def __init__(self):
+    def __init__(self,
+                    embedding_size:int):
         super().__init__()
         self.pool = nn.MaxPool1d(kernel_size=1, stride=1)
 
@@ -38,13 +47,12 @@ class MaxPool(nn.Module):
 class MLP_Pool(nn.Module):
     """MLP to pool across the channels"""
 
-    def __init__(self, embedding_size, 
-                 n_channels:int = 2,
-                 n_layers:int = 2,
-                 reduction_ratio:float = 0.5):
+    def __init__(self, embedding_size:int,
+                 n_channels:int,
+                 MLP_config:DictConfig):
         super().__init__()
-        self.pool = make_mlp(embedding_size * n_channels, embedding_size,
-                             n_layers=n_layers, reduction_ratio=reduction_ratio)
+        self.pool = instantiate(MLP_config, input_size=embedding_size * n_channels,
+                                output_size=embedding_size)
         self.n_channels = n_channels
 
     def forward(self, x):
@@ -57,18 +65,16 @@ class AttentionPool(nn.Module):
     """Uses attention to pool across the channels"""
 
     def __init__(self, embedding_size,
-                 attention_network_layers:int = 1,
-                 reduction_ratio:float = 0.5,
-                 MLP_layers:int = 0,
-                 n_heads:int = 1):
+                 n_heads:int,
+                 attention_MLP:DictConfig,
+                 MLP_config:DictConfig):
         super().__init__()
         assert n_heads> 0, "n_heads must be greater than 0"
         assert embedding_size % n_heads == 0, "embedding_size must be divisible by n_heads"
-        self.attention_network = make_mlp(embedding_size, n_heads,
-                                            n_layers=attention_network_layers,
-                                            reduction_ratio=reduction_ratio)
-        self.MLP = make_mlp(embedding_size, embedding_size,
-                            n_layers=MLP_layers, reduction_ratio=1.0)
+        self.attention_network = instantiate(attention_MLP, input_size=embedding_size,
+                                             output_size=n_heads)
+        self.MLP = instantiate(MLP_config, input_size=embedding_size,
+                              output_size=embedding_size)
         self.n_heads = n_heads
 
     def forward(self, x):

@@ -103,6 +103,7 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         self.P = P
         self.log_spectogram = log_spectogram
         self.norm_method = norm_method  
+        self.input_num_channels = num_channels
 
 
 # @dataclass
@@ -146,7 +147,7 @@ class ViTMAEForEMG_PretrainingOutput(FoundationalModelOutput):
 
 class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrainedModel):
 
-
+    encoder_only_mode:bool = False
     def __init__(self, config: ViTMAEForEMGConfig):
 
         ViTMAEPreTrainedModel.__init__(self, config)
@@ -422,7 +423,8 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrain
         #push the latent representation through the bottleneck layer
         latent = self.bottleneck(latent)
         latent = self.bottleneck_activation(latent)
-
+        if self.encoder_only_mode:
+            return latent.reshape(latent.shape[0], -1) #flatten the latent representation
         ids_restore = outputs.ids_restore
         mask = outputs.mask
 
@@ -540,6 +542,32 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrain
             output.append((output_i, names_i))
         
         return output
+    
+    def encoder_only(self, freeze_encoder:bool):
+
+        #delete the decoder
+        del self.decoder
+
+        #clean memory
+        torch.cuda.empty_cache()
+
+        self.encoder_only_mode = True
+
+        if freeze_encoder:
+            for param in self.vit.parameters():
+                param.requires_grad = False
+            for param in self.bottleneck.parameters():
+                param.requires_grad = False
+        else:
+            for param in self.vit.parameters():
+                param.requires_grad = True
+            for param in self.bottleneck.parameters():
+                param.requires_grad = True
+
+    def get_encoder_output_size(self):
+        return self.config.bottleneck_dim * (self.config.reshape_size // self.config.patch_size) ** 2
+            
+        
 
 
 class ViTMAE_Pretraining_Lightning(Pretraining_Lightning):

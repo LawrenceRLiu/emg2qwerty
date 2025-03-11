@@ -1,0 +1,13 @@
+# @package _global_
+to_tensor:
+  _target_: emg2qwerty.transforms.ToTensor
+  fields: [emg_left, emg_right]
+
+transforms:
+  train:
+    - ${to_tensor}
+
+  val:
+    - ${transforms.train}
+
+  test: ${transforms.val}
