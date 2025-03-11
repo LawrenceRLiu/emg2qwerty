@@ -1,66 +1,55 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from omegaconf import DictConfig
+from hydra.utils import instantiate
 
+from torchmetrics import MetricCollection
 
-from emg2qwerty.lightning import LightningModule
+from emg2qwerty.lightning import TDSConvCTCModule
+from emg2qwerty import utils
+from emg2qwerty.charset import charset
+from emg2qwerty.data import LabelData, WindowedEMGDataset
+from emg2qwerty.metrics import CharacterErrorRates
+from emg2qwerty.decoder import CTCGreedyDecoder, CTCBeamDecoder
 
-from .utils import make_mlp
+from .utils import MLP
 from .pool import MLP_Pool, AttentionPool
 from .embedding import SimpleEmbedding
+from ..models.ViTMAE import ViTMAE_Pretraining_Lightning
 
 
-#quick and dirty without hydra rn
-class DownstreamDecoder(nn.Module):
-    """Decoder for the downstream task"""
+#using hydra because I am retarded
+
+
+class DownstreamHead(nn.Module):
+    """DownstreamHead for the downstream task"""
 
     def __init__(self, 
-                 input_size:int = 14**2*8,
-                 pooling_method:str = "attention",
-                 pooling_kwargs:dict = {},
-                 embedding_method:str = "simple",
-                embedding_kwargs:dict = {},
-                n_layers:int = 2,
-                reduction_ratio:float = 0.5,
-                output_size:int = 26,
-                activation:str = 'relu'):
+                 input_size:int,
+                 n_channels:int,
+                 output_size:int,
+                 pre_pooling_mlp_config:DictConfig,
+                 post_pooling_mlp_config:DictConfig,
+                 pooling_config: DictConfig,
+                embedding_config: DictConfig):
+        """DownstreamHead for the downstream task"""
 
         super().__init__()
         self.input_size = input_size
 
-        self.pooling = self._get_pooling(pooling_method, pooling_kwargs)
+        self.embedding = instantiate(embedding_config, input_size = input_size,
+                                     n_channels = n_channels)
+        self.pre_pooling_mlp = instantiate(pre_pooling_mlp_config, input_size = input_size)
 
-        self.embedding = self._get_embedding(embedding_method, embedding_kwargs)
+        hidden_size = self.pre_pooling_mlp.output_size
 
-        self.mlp = make_mlp(input_size, output_size,
-                                n_layers=n_layers, reduction_ratio=reduction_ratio,
-                                activation=activation)
+        self.pooling = instantiate(pooling_config, embedding_size = hidden_size)
+        self.post_pooling_mlp = instantiate(post_pooling_mlp_config, input_size = hidden_size,
+                                            output_size = output_size)
+        
         
         self.final_activation = nn.LogSoftmax(dim=-1)
-    
-
-    def _get_pooling(self,pooling_method:str, pooling_kwargs:dict = {})
-        
-        pooling_method = pooling_method.lower()
-        if pooling_method == "mlp":
-            self.pool = MLP_Pool(
-                embedding_size = self.input_size,
-                **pooling_kwargs)
-        elif pooling_method == "attention":
-            self.pool = AttentionPool(embedding_size = self.input_size,
-                **pooling_kwargs)
-        else:
-            raise ValueError(f"pooling method {pooling_method} not supported")
-
-
-    def _get_embedding(self, embedding_method:str, embedding_kwargs:dict = {}):
-        embedding_method = embedding_method.lower()
-        if embedding_method == "simple":
-            self.embedding = SimpleEmbedding(
-                **embedding_kwargs)
-        else:
-            raise ValueError(f"embedding method {embedding_method} not supported")
-        
     
     def forward(self, x):   
         #x is expected to be of shape (batch_size, 2, channels, embedding_size)
@@ -78,4 +67,102 @@ class DownstreamDecoder(nn.Module):
         x = self.final_activation(x)
 
         return x
+    
+class DownstreamModel(nn.Module):
+    def __init__(self, 
+                    foundational_model_name:str,
+                    foundational_model_checkpoint:str,
+                    freeze_foundational_model:bool,
+                    output_size:int,
+                    pre_pooling_mlp_config:DictConfig,
+                    post_pooling_mlp_config:DictConfig,
+                    pooling_config: DictConfig,
+                    embedding_config: DictConfig):
+        super().__init__()
+
+
+        #load the foundational model
+        self.load_foundational_model(foundational_model_name, foundational_model_checkpoint, freeze_foundational_model)
+        self.DownstreamHead = DownstreamHead(input_size = self.foundational_model.get_encoder_output_size(),
+                                             n_channels = 32 // self.foundational_model.config.input_num_channels,
+                                                output_size = output_size,
+                                                pre_pooling_mlp_config = pre_pooling_mlp_config,
+                                                post_pooling_mlp_config = post_pooling_mlp_config,
+                                                pooling_config = pooling_config,
+                                                embedding_config = embedding_config)
+        
+
+    def load_foundational_model(self, foundational_model_name:str, foundational_model_checkpoint:str, freeze_foundational_model:bool):
+        
+        if foundational_model_name == "ViTMAE":
+            foundational_model_pl = ViTMAE_Pretraining_Lightning.load_from_checkpoint(foundational_model_checkpoint)
+        else:
+            #TODO: add your foundational model here
+            raise ValueError(f"foundational model {foundational_model_name} not supported")
+        
+        self.foundational_model = foundational_model_pl.model
+
+        #set to encoder only mode
+        self.foundational_model.encoder_only(freeze_foundational_model)
+
+    def forward(self, emg_data):
+
+        #emg data of shape (batch_size, 2, channels, sequence_len)
+        #reshape to the shape expected by the foundational model
+
+        n_batch, _, n_channels, sequence_len = emg_data.shape
+        assert sequence_len == self.foundational_model.config.sequence_len, f"sequence length must match the foundational model sequence length: {sequence_len} != {self.foundational_model.config.sequence_len}"
+        x = self.foundational_model(emg_data.view(-1, self.foundational_model.config.input_num_channels, sequence_len))
+
+        #reshape to the shape expected by the DownstreamHead
+        x = x.view(n_batch, -1, x.shape[-1])
+
+        return self.DownstreamHead(x)
+
+    
+class DownstreamModel(TDSConvCTCModule):
+    """Downstream task model, built off the TDSConvCTCModule"""
+
+    def __init__(self, 
+                foundational_model_name:str,
+                foundational_model_checkpoint:str,
+                freeze_foundational_model:bool,
+                DownstreamHead_config:DictConfig,
+                optimizer: DictConfig,
+                lr_scheduler: DictConfig,
+                decoder: DictConfig):
+
+        super().__init__()
+        self.save_hyperparameters()
+
+        #load the foundational model
+        self.model = instantiate(
+            DownstreamModel,
+            foundational_model_name = foundational_model_name,
+            foundational_model_checkpoint = foundational_model_checkpoint,
+            freeze_foundational_model = freeze_foundational_model,
+            output_size = charset().num_classes,
+            **DownstreamHead_config
+        )
+
+
+        # Decoder
+        self.decoder = instantiate(decoder)
+        # Criterion
+        self.ctc_loss = nn.CTCLoss(blank=charset().null_class)
+
+        # Metrics
+        metrics = MetricCollection([CharacterErrorRates()])
+        self.metrics = nn.ModuleDict(
+            {
+                f"{phase}_metrics": metrics.clone(prefix=f"{phase}/")
+                for phase in ["train", "val", "test"]
+            }
+        )
+
+    
+        
+
+        
+
     
