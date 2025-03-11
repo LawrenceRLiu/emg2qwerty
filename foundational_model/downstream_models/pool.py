@@ -51,8 +51,10 @@ class MLP_Pool(nn.Module):
                  n_channels:int,
                  MLP_config:DictConfig):
         super().__init__()
-        self.pool = instantiate(MLP_config, input_size=embedding_size * n_channels,
-                                output_size=embedding_size)
+        self.pool = instantiate({"__target__":MLP},
+                                input_size=embedding_size * n_channels,
+                                output_size=embedding_size,
+                                **MLP_config)
         self.n_channels = n_channels
 
     def forward(self, x):
@@ -64,17 +66,21 @@ class MLP_Pool(nn.Module):
 class AttentionPool(nn.Module):
     """Uses attention to pool across the channels"""
 
-    def __init__(self, embedding_size,
+    def __init__(self, embedding_size:int,
                  n_heads:int,
                  attention_MLP:DictConfig,
-                 MLP_config:DictConfig):
+                 value_MLP:DictConfig):
         super().__init__()
         assert n_heads> 0, "n_heads must be greater than 0"
         assert embedding_size % n_heads == 0, "embedding_size must be divisible by n_heads"
-        self.attention_network = instantiate(attention_MLP, input_size=embedding_size,
-                                             output_size=n_heads)
-        self.MLP = instantiate(MLP_config, input_size=embedding_size,
-                              output_size=embedding_size)
+        self.attention_network = instantiate({"__target__":MLP}, 
+                                             input_size=embedding_size,
+                                             output_size=n_heads,
+                                                **attention_MLP)
+        self.MLP = instantiate({"__target__":MLP},
+                               input_size=embedding_size,
+                              output_size=embedding_size,
+                                **value_MLP)
         self.n_heads = n_heads
 
     def forward(self, x):

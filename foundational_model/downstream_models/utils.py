@@ -8,8 +8,9 @@ from typing import List, Optional, Dict
 class MLP(nn.Module):
 
     def __init__(self, input_size:int, output_size:int,
-                 activation:DictConfig,
+                 activation:DictConfig = {"__target__":"torch.nn.ReLU"},    
                  intermediate_sizes:Optional[List[int]] = None,
+                 dropout:float = 0.0,
                  n_layers:int = 2, 
                  reduction_ratio:float = 0.5):
         """MLP with configurable number of layers and sizes
@@ -52,6 +53,8 @@ class MLP(nn.Module):
         for i, n_out in enumerate(intermediate_sizes):
             layers.append(nn.Linear(n_in, n_out))
             layers.append(instantiate(activation))
+            if dropout > 0:
+                layers.append(nn.Dropout(dropout))
             n_in = n_out
         self.mlp = nn.Sequential(*layers)
 

@@ -13,6 +13,7 @@ class LightningConfig:
     optimizer: Union[torch.optim.Optimizer, str] = "Adam"
     lr: float = 1e-3
     lr_scheduler: Union[torch.optim.lr_scheduler._LRScheduler, str] = "none"
+    lr_scheduler_kwargs: Dict[str, Any] = field(default_factory=dict)
     sample_log_interval: InitVar[Union[int, Tuple[int,int]]] = 100,  #tuple allows us to pick different logging intervals for train and val
     log_one_sample: bool = True, #log one sample of the input and output spectograms or all the samples in a batch,
 
@@ -23,7 +24,7 @@ class LightningConfig:
             self.sample_log_interval_val = sample_log_interval
         else:
             self.sample_log_interval_train, self.sample_log_interval_val = sample_log_interval
-
+        
 
 
 @dataclass(kw_only=True)
@@ -150,8 +151,8 @@ class Pretraining_Lightning(pl.LightningModule):
         if isinstance(self.config.lr_scheduler, str):
             if self.config.lr_scheduler.lower() == "none":
                 return {"optimizer": optimizer}
-            scheduler = eval(f"torch.optim.lr_scheduler.{self.config.lr_scheduler}")(optimizer, **self.config.scheduler_kwargs)
+            scheduler = eval(f"torch.optim.lr_scheduler.{self.config.lr_scheduler}")(optimizer, **self.config.lr_scheduler_kwargs)
         else:
-            scheduler = self.config.lr_scheduler(optimizer, **self.config.scheduler_kwargs)
+            scheduler = self.config.lr_scheduler(optimizer, **self.config.lr_scheduler_kwargs)
 
         return {"optimizer": optimizer, "lr_scheduler": scheduler}

@@ -101,7 +101,9 @@ model_config = ViTMAE.LightningConfig(
         norm_method = "global",
     ),
     sample_log_interval=(int(len(train_loader)/4), int(len(val_loader)/4)),
-    lr = 1e-4
+    lr = 1e-3,
+    lr_scheduler="CosineAnnealingWarmRestarts",
+    lr_scheduler_kwargs = dict(T_0 = 25, T_mult = 2, eta_min = 1e-6),   
 )
 
 model = ViTMAE.ViTMAE_Pretraining_Lightning(model_config)

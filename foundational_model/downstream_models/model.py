@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from omegaconf import DictConfig
 from hydra.utils import instantiate
-
+import pytorch_lightning as pl
 from torchmetrics import MetricCollection
+from typing import Any, ClassVar
 
 from emg2qwerty.lightning import TDSConvCTCModule
 from emg2qwerty import utils
@@ -38,15 +39,19 @@ class DownstreamHead(nn.Module):
         super().__init__()
         self.input_size = input_size
 
-        self.embedding = instantiate(embedding_config, input_size = input_size,
-                                     n_channels = n_channels)
-        self.pre_pooling_mlp = instantiate(pre_pooling_mlp_config, input_size = input_size)
+        self.embedding = instantiate(embedding_config, embedding_size = input_size,
+                                     n_channels = n_channels//2)
+        self.pre_pooling_mlp = instantiate({"__target__":MLP}, input_size = input_size,
+                                           **pre_pooling_mlp_config)
 
         hidden_size = self.pre_pooling_mlp.output_size
-
+        print()
+        print("pooling config", pooling_config)
         self.pooling = instantiate(pooling_config, embedding_size = hidden_size)
-        self.post_pooling_mlp = instantiate(post_pooling_mlp_config, input_size = hidden_size,
-                                            output_size = output_size)
+        self.post_pooling_mlp = instantiate({"__target__":MLP},
+                                            input_size = hidden_size,
+                                            output_size = output_size,
+                                            **post_pooling_mlp_config)
         
         
         self.final_activation = nn.LogSoftmax(dim=-1)
@@ -79,9 +84,10 @@ class DownstreamModel(nn.Module):
                     pooling_config: DictConfig,
                     embedding_config: DictConfig):
         super().__init__()
-
+        print("here")
 
         #load the foundational model
+        print(f"loading foundational model {foundational_model_name} from {foundational_model_checkpoint}")
         self.load_foundational_model(foundational_model_name, foundational_model_checkpoint, freeze_foundational_model)
         self.DownstreamHead = DownstreamHead(input_size = self.foundational_model.get_encoder_output_size(),
                                              n_channels = 32 // self.foundational_model.config.input_num_channels,
@@ -120,29 +126,33 @@ class DownstreamModel(nn.Module):
         return self.DownstreamHead(x)
 
     
-class DownstreamModel(TDSConvCTCModule):
+class DownstreamModelLighting(TDSConvCTCModule, pl.LightningModule):
     """Downstream task model, built off the TDSConvCTCModule"""
 
     def __init__(self, 
                 foundational_model_name:str,
                 foundational_model_checkpoint:str,
-                freeze_foundational_model:bool,
                 DownstreamHead_config:DictConfig,
                 optimizer: DictConfig,
                 lr_scheduler: DictConfig,
                 decoder: DictConfig):
 
-        super().__init__()
+        pl.LightningModule.__init__(self) 
+        print("optimizer", optimizer)
+        print("lr_scheduler", lr_scheduler)
+        # raise ValueError("stop here")  
         self.save_hyperparameters()
+        self.hparams.optimizer = optimizer
+        self.hparams.lr_scheduler = lr_scheduler
 
         #load the foundational model
         self.model = instantiate(
-            DownstreamModel,
+            DownstreamHead_config,
             foundational_model_name = foundational_model_name,
             foundational_model_checkpoint = foundational_model_checkpoint,
-            freeze_foundational_model = freeze_foundational_model,
             output_size = charset().num_classes,
-            **DownstreamHead_config
+            _recursive_ = False,
+            # **DownstreamHead_config
         )
 
 
@@ -160,6 +170,13 @@ class DownstreamModel(TDSConvCTCModule):
             }
         )
 
+    def configure_optimizers(self) -> dict[str, Any]:
+        print("self.hparams", self.hparams)
+        return utils.instantiate_optimizer_and_scheduler(
+            self.model.parameters(),
+            optimizer_config=self.hparams.optimizer,
+            lr_scheduler_config=self.hparams.lr_scheduler,
+        )
     
         
 
