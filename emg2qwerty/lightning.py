@@ -204,16 +204,23 @@ class TDSConvCTCModule(pl.LightningModule):
         targets = batch["targets"]
         input_lengths = batch["input_lengths"]
         target_lengths = batch["target_lengths"]
+        print("inputs", inputs.shape)
+        print("targets", targets.shape)
+        print("input_lengths", input_lengths.shape)
+        print("target_lengths", target_lengths.shape)
+
         N = len(input_lengths)  # batch_size
 
         emissions = self.forward(inputs)
-
+        print("emissions", emissions.shape)
+        print("targets",targets.transpose(0, 1).shape)
         # Shrink input lengths by an amount equivalent to the conv encoder's
         # temporal receptive field to compute output activation lengths for CTCLoss.
         # NOTE: This assumes the encoder doesn't perform any temporal downsampling
         # such as by striding.
         T_diff = inputs.shape[0] - emissions.shape[0]
         emission_lengths = input_lengths - T_diff
+        print("emission_lengths", emission_lengths)
 
         loss = self.ctc_loss(
             log_probs=emissions,  # (T, N, num_classes)
@@ -221,7 +228,7 @@ class TDSConvCTCModule(pl.LightningModule):
             input_lengths=emission_lengths,  # (N,)
             target_lengths=target_lengths,  # (N,)
         )
-
+        raise NotImplementedError("Implement the rest of the method")
         # Decode emissions
         predictions = self.decoder.decode_batch(
             emissions=emissions.detach().cpu().numpy(),

@@ -2,30 +2,32 @@
 module:
   _target_: foundational_model.downstream_models.model.DownstreamModelLighting
   foundational_model_name: "ViTMAE"
-  foundational_model_checkpoint: "./runs/happy-plasma-106/emg2qwerty_pretraining/version_None/checkpoints/epoch=3-step=12260.ckpt"
+  foundational_model_checkpoint: "./runs/graceful-blaze-108/emg2qwerty_pretraining/version_None/checkpoints/epoch=8-step=27585.ckpt"
   DownstreamHead_config:
-    __target__: foundational_model.downstream_models.model.DownstreamModel
+    # _target_: foundational_model.downstream_models.model.DownstreamModel
     freeze_foundational_model: True
     pre_pooling_mlp_config:
-      n_layers: 0
+      n_layers: 1
+      output_size: 64
+      # n_layers: 0
     post_pooling_mlp_config:
       n_layers: 2
-      intermediate_sizes: [256]
+      hidden_dims: [128]
       dropout: 0.0
     pooling_config:
       _target_: foundational_model.downstream_models.pool.AttentionPool
       n_heads: 8
-      embedding_size: 1568
+      # embedding_size: 1568
       attention_MLP:
-        n_layers: 2
-        intermediate_sizes: [512]
+        n_layers: 1
+        # hidden_dims: [512]
         dropout: 0.0
       value_MLP:
-        n_layers: 2
-        intermediate_sizes: [512]
+        n_layers: 1
+        # hidden_dims: [512]
         dropout: 0.0
     embedding_config:
-      __target__: foundational_model.downstream_models.embedding.SimpleEmbedding
+      _target_: foundational_model.downstream_models.embedding.SimpleEmbedding
       
       
       

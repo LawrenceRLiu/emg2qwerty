@@ -58,7 +58,7 @@ class ViTMAEForEMGConfig(ViTMAEConfig):
         self.spectogram_size = (n_fft//2 + 1, sequence_len//hop_length + 1)
         print(self.spectogram_size)
         self.reshape_size = max(self.spectogram_size) if reshape_size is None else reshape_size
-        
+        print("reshaping to:", reshape_size)
         if reshape_size is None:
             self.interpolation_transform = "nearest"
             self.interpolation_inverse = "nearest"
@@ -423,14 +423,26 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrain
         #push the latent representation through the bottleneck layer
         latent = self.bottleneck(latent)
         latent = self.bottleneck_activation(latent)
+
+        # print("patch size", self.config.patch_size, "reshape size", self.config.reshape_size)
+        #     #get the number of patches
+        # print("n_patches", self.vit.embeddings.num_patches)
+        # print("latent", latent.shape)
+        
+
         if self.encoder_only_mode:
-            return latent.reshape(latent.shape[0], -1) #flatten the latent representation
+            print("patch size", self.config.patch_size, "reshape size", self.config.reshape_size)
+            #get the number of patches
+            print("n_patches", self.vit.embeddings.num_patches)
+            print("latent", latent.shape)
+            # return latent.reshape(latent.shape[0], -1) #flatten the latent representation
         ids_restore = outputs.ids_restore
         mask = outputs.mask
 
         decoder_outputs = self.decoder(latent, ids_restore, interpolate_pos_encoding=interpolate_pos_encoding)
         logits = decoder_outputs.logits  # shape (batch_size, num_patches, patch_size*patch_size*num_channels)
-
+        # print("logits.shape", logits.shape)
+        # raise ValueError
         loss, loss_dict = self.forward_loss(logits, mask, input_specs, input_waveforms, phases, interpolate_pos_encoding)
         # raise ValueError("stop here")
         if not return_dict:
@@ -565,8 +577,7 @@ class ViTMAEForEMG_Pretraining(ViTMAEForPreTraining, ParentModel, ViTMAEPreTrain
                 param.requires_grad = True
 
     def get_encoder_output_size(self):
-        return self.config.bottleneck_dim * (self.config.reshape_size // self.config.patch_size) ** 2
-            
+        return self.config.bottleneck_dim * (self.vit.embeddings.num_patches + 1) #+1 for the CLS token
         
 
 
