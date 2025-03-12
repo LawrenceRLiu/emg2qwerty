@@ -51,7 +51,7 @@ class MLP_Pool(nn.Module):
                  n_channels:int,
                  MLP_config:DictConfig):
         super().__init__()
-        self.pool = instantiate({"__target__":MLP},
+        self.pool = instantiate({"_target_":MLP},
                                 input_size=embedding_size * n_channels,
                                 output_size=embedding_size,
                                 **MLP_config)
@@ -72,12 +72,12 @@ class AttentionPool(nn.Module):
                  value_MLP:DictConfig):
         super().__init__()
         assert n_heads> 0, "n_heads must be greater than 0"
-        assert embedding_size % n_heads == 0, "embedding_size must be divisible by n_heads"
-        self.attention_network = instantiate({"__target__":MLP}, 
+        assert embedding_size % n_heads == 0, f"embedding_size must be divisible by n_heads: {embedding_size} % {n_heads} != 0"
+        self.attention_network = instantiate({"_target_":MLP}, 
                                              input_size=embedding_size,
                                              output_size=n_heads,
                                                 **attention_MLP)
-        self.MLP = instantiate({"__target__":MLP},
+        self.MLP = instantiate({"_target_":MLP},
                                input_size=embedding_size,
                               output_size=embedding_size,
                                 **value_MLP)

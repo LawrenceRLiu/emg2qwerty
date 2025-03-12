@@ -8,6 +8,6 @@ transforms:
     - ${to_tensor}
 
   val:
-    - ${transforms.train}
+    - ${to_tensor}
 
   test: ${transforms.val}
