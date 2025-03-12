@@ -18,6 +18,7 @@ from .utils import MLP
 from .pool import MLP_Pool, AttentionPool
 from .embedding import SimpleEmbedding
 from ..models.ViTMAE import ViTMAE_Pretraining_Lightning
+from ..models.SingleChannelConv import SingleChannelAE_CNN_Lightning
 
 
 #using hydra because I am retarded
@@ -43,7 +44,7 @@ class DownstreamModel(nn.Module):
 
         print("encoder output size", self.foundational_model.get_encoder_output_size())
         self.embedding = instantiate(embedding_config, embedding_size = self.foundational_model.get_encoder_output_size(),
-                                     n_channels = (self.N_CHANNELS)//self.foundational_model.config.input_num_channels)
+                                     n_channels = (self.N_CHANNELS)//self.foundational_model.INPUT_NUM_CHANNELS)
         self.pre_pooling_mlp = MLP(input_size = self.foundational_model.get_encoder_output_size(),
                                    final_activation = True,
                                            **pre_pooling_mlp_config)
@@ -52,6 +53,8 @@ class DownstreamModel(nn.Module):
         print()
         print("pooling config", pooling_config)
         self.pool = instantiate(pooling_config, embedding_size = hidden_size)
+        self.output_size = output_size
+        print("output_size", output_size)
         self.post_pooling_mlp = MLP(
                                             input_size = hidden_size,
                                             output_size = output_size,
@@ -65,6 +68,8 @@ class DownstreamModel(nn.Module):
         
         if foundational_model_name == "ViTMAE":
             foundational_model_pl = ViTMAE_Pretraining_Lightning.load_from_checkpoint(foundational_model_checkpoint)
+        elif foundational_model_name == "SingleChannelConv":
+            foundational_model_pl = SingleChannelAE_CNN_Lightning.load_from_checkpoint(foundational_model_checkpoint)
         else:
             #TODO: add your foundational model here
             raise ValueError(f"foundational model {foundational_model_name} not supported")
@@ -72,17 +77,48 @@ class DownstreamModel(nn.Module):
         self.foundational_model = foundational_model_pl.model
 
         #set to encoder only mode
-        # self.foundational_model.encoder_only(freeze_foundational_model)
+        self.foundational_model.encoder_only(freeze_foundational_model)
 
     def forward(self, emg_data):
 
         #emg data of shape (batch_size, 2, channels, sequence_len)
         #reshape to the shape expected by the foundational model
-        print("emg_data", emg_data.shape)
+        # print("emg_data", emg_data.shape)
         emg_data = emg_data.permute(1,2,3,0)
         n_batch, _, n_channels, sequence_len = emg_data.shape
-        assert sequence_len == self.foundational_model.config.sequence_len, f"sequence length must match the foundational model sequence length: {sequence_len} != {self.foundational_model.config.sequence_len}"
-        x = self.foundational_model(emg_data.view(-1, self.foundational_model.config.input_num_channels, sequence_len))
+        # assert sequence_len == self.foundational_model.config.sequence_len, f"sequence length must match the foundational model sequence length: {sequence_len} != {self.foundational_model.config.sequence_len}"
+        x = self.foundational_model(emg_data.view(-1, self.foundational_model.INPUT_NUM_CHANNELS, sequence_len)) #shape of (N*C*2, compressed_size, sequence_len)
+
+        x = x.reshape((x.shape[0], -1) + x.shape[2:]) #shape of (N, C*2, compressed_size, sequence_len)
+        # print("x", x.shape)
+        #permute
+        x = x.permute(3,0,1,2) #shape of (sequence_len, N, C*2, compressed_size)
+
+        #reshape to (sequence_len, N, 2, C, compressed_size)
+        x = x.reshape(x.shape[0], n_batch, 2, -1, x.shape[-1])
+
+        #add an embedding
+        x = self.embedding(x.reshape(-1, 2, x.shape[-2], x.shape[-1])).reshape(x.shape)
+        # print("embedding", x.shape)
+        #pass through the pre_pooling_mlp
+        x = self.pre_pooling_mlp(x)
+
+        # print("pre_pooling_mlp", x.shape)
+
+        #pool across the channels
+        x = self.pool(x) #shape (sequence_len, n_batch, embedding_size)
+        # print("post_pooling_mlp", x.shape)
+        #pass through the post_pooling_mlp
+        x = self.post_pooling_mlp(x) #shape (sequence_len, n_batch, output_size)
+        # print("post_pooling_mlp", x.shape)
+        #activate
+
+        x = self.final_activation(x)
+        # print("final_x", x.shape)
+        # print("self.output_size", self.output_size)
+        return x 
+        #pool across the ch
+        #reshape 
         print("x", x.shape)
         #reshape to the shape expected by the DownstreamHead
         x = x.view(n_batch, 2, -1, x.shape[-1])
@@ -135,6 +171,7 @@ class DownstreamModelLighting(pl.LightningModule):
         print("here")
         print("DownstreamHead_config", DownstreamHead_config)
         #load the foundational model
+        print("char set", charset().num_classes)
         self.model = DownstreamModel(
             foundational_model_name = foundational_model_name,
             foundational_model_checkpoint = foundational_model_checkpoint,
@@ -178,7 +215,9 @@ class DownstreamModelLighting(pl.LightningModule):
         inputs = batch["inputs"]
         targets = batch["targets"]
         input_lengths = batch["input_lengths"]
+        # print("input_lengths", input_lengths)
         target_lengths = batch["target_lengths"]
+        # print("target_lengths", target_lengths)
         N = len(input_lengths)  # batch_size
 
         emissions = self.forward(inputs)
@@ -187,9 +226,12 @@ class DownstreamModelLighting(pl.LightningModule):
         # temporal receptive field to compute output activation lengths for CTCLoss.
         # NOTE: This assumes the encoder doesn't perform any temporal downsampling
         # such as by striding.
+        # print("inputs.shape", inputs.shape)
         T_diff = inputs.shape[0] - emissions.shape[0]
-        emission_lengths = input_lengths - T_diff
-
+        # T_diff = 0 #not sure if this is correct but lets see
+        # print("T_diff", T_diff)
+        emission_lengths = 1 + input_lengths//self.model.foundational_model.config.hop_length
+        # print("emission_lengths", emission_lengths)
         loss = self.ctc_loss(
             log_probs=emissions,  # (T, N, num_classes)
             targets=targets.transpose(0, 1),  # (T, N) -> (N, T)

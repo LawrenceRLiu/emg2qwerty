@@ -84,20 +84,34 @@ class AttentionPool(nn.Module):
         self.n_heads = n_heads
 
     def forward(self, x):
-        x_use = x.view(x.shape[0], x.shape[1] * x.shape[2], x.shape[3]) #shape (batch, 2*channels, embedding_size)
+        x_use = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3], x.shape[4]) #shape (seqlen, batch, 2*channels, embedding_size)
+        # print("x_use", x_use.shape)
         #pass through attention network
-        attention_logits = self.attention_network( x_use ) #shape (batch, 2*channels, n_heads)
+        attention_logits = self.attention_network( x_use ) #shape (seqlen, batch, 2*channels, n_heads)
         
-        attention_weights = torch.softmax(attention_logits, dim=1) #shape (batch, 2*channels, n_heads)
+        attention_weights = torch.softmax(attention_logits, dim=-2) #shape (seqlen, batch, 2*channels, n_heads)
+        # print("attention_weights", attention_weights.shape)
 
-        emebddings = self.MLP(x) #shape (batch, 2*channels, embedding_size)
-
+        emebddings = self.MLP(x_use) #shape (seqlen, batch, 2*channels, embedding_size)
+        # print("emebddings", emebddings.shape)
+        #break the embeddings into n_heads
+        emebddings = emebddings.view(emebddings.shape[:-1] + (self.n_heads, emebddings.shape[-1]//self.n_heads)) #shape (seqlen, batch, 2*channels, n_heads, embedding_size//n_heads)
+        # print("emebddings", emebddings.shape)
         #apply attention weights
         pooled = (
             attention_weights.unsqueeze(-1) * \
-            emebddings.reshape(x_use.shape[0], x_use.shape[1], self.n_heads, -1)
-            ).sum(dim=1) #shape (batch, n_heads, embedding_size)
-        return pooled.reshape(x.shape[0], -1) #shape (batch, n_heads*embedding_size)
+            emebddings
+            ).sum(dim=-3)
+        # print("pooled", pooled.shape)
+        return pooled.reshape(x.shape[0], x.shape[1], x.shape[-1])
+        raise ValueError
+
+        #apply attention weights
+        # pooled = (
+        #     attention_weights.unsqueeze(-2) * \
+        #     emebddings.reshape(-1, x.shape[-]
+        #     ).sum(dim=1) #shape (batch, n_heads, embedding_size)
+        return pooled.reshape(x.shape[0], x.shape[1], x.shape[-1])
     
 
 

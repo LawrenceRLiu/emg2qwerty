@@ -40,8 +40,11 @@ class SpectogramTransform(nn.Module):
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             power=None)
-        self.resize = T_vision.Resize((self.reshape_size, self.reshape_size), 
-                                      interpolation=get_interpolation(interpolation))
+        if reshape_size == -1:
+            self.resize = lambda x: x
+        else:
+            self.resize = T_vision.Resize((self.reshape_size, self.reshape_size), 
+                                        interpolation=get_interpolation(interpolation))
 
     def __call__(self, x: torch.FloatTensor
                 ) -> Union[Tuple[torch.FloatTensor, torch.FloatTensor], torch.FloatTensor]:
@@ -101,8 +104,11 @@ class InverseSpectogramTransform(nn.Module):
             n_fft=self.n_fft,
             hop_length=self.hop_length)
 
-        self.resize = T_vision.Resize(self.original_size, 
-                                      interpolation=get_interpolation(interpolation))
+        if self.original_size == -1:
+            self.resize = lambda x: x
+        else:
+            self.resize = T_vision.Resize(self.original_size, 
+                                        interpolation=get_interpolation(interpolation))
         self.tensor = torch.tensor([1.0, 1j])
 
     def forward(self, x: torch.FloatTensor,
