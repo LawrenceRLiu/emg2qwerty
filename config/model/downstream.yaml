@@ -1,8 +1,8 @@
 # @package _global_
 module:
   _target_: foundational_model.downstream_models.model.DownstreamModelLighting
-  foundational_model_name: "ViTMAE"
-  foundational_model_checkpoint: "./runs/graceful-blaze-108/emg2qwerty_pretraining/version_None/checkpoints/epoch=8-step=27585.ckpt"
+  foundational_model_name: "SingleChannelConv"
+  foundational_model_checkpoint: "./runs/fine-darkness-141/emg2qwerty_pretraining/version_None/checkpoints/epoch=7-step=24520.ckpt"
   DownstreamHead_config:
     # _target_: foundational_model.downstream_models.model.DownstreamModel
     freeze_foundational_model: True

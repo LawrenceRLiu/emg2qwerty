@@ -60,6 +60,9 @@ class MLP(nn.Module):
             if dropout > 0:
                 layers.append(nn.Dropout(dropout))
             n_in = n_out
+        
+        layers.append(nn.Linear(n_in, output_size, bias=final_bias))
+        print("len(layers", len(layers))
         if isinstance(final_activation, DictConfig):
             layers.append(instantiate(final_activation))
         elif final_activation:

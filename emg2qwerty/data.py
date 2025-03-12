@@ -497,6 +497,7 @@ class WindowedEMGDataset(torch.utils.data.Dataset):
         window = self.session[window_start:window_end]
 
         # Extract EMG tensor corresponding to the window.
+        # print("window", window)
         emg = self.transform(window)
         assert torch.is_tensor(emg)
 

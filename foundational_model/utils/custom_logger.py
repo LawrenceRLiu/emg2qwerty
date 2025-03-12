@@ -80,16 +80,23 @@ class CustomPretrainLogger(WandbLogger):
             spec_size (int, optional): the size of the spectograms. Defaults to 5.
             layout (Union[Tuple[int, int], None], optional): the layout of the spectograms. Defaults to None.
         """
-        #if the layout is none, just log a flat list
+        #if the layout is none, just log a flat list along the shortest dimension
         if layout is None:
-            layout = (1, len(spectograms))
+            s = spectograms[0].shape[-2:] #just the last two, height and width
+            #check which dimension is shorter
+            if s[0] < s[1]:
+                layout = (len(spectograms), 1)
+            else:
+                layout = (1, len(spectograms))
 
-        fig, axs = plt.subplots(*layout, figsize=( spec_size * layout[1], spec_size * layout[0]))
+        fig, axs = plt.subplots(*layout, figsize=( spec_size * layout[0], spec_size * layout[1]))
         #unsqueeze the axs if it is a single axis
+        # print(axs.shape)
         if len(axs.shape) == 1:
             axs = np.expand_dims(axs, 0)
+        # print(axs.shape)
         for i, (spec, name) in enumerate(zip(spectograms, names)):
-            ax = axs[i%layout[0], i//layout[0]]
+            ax = axs[i%layout[1], i//layout[1]]
             ax.imshow(spec.squeeze().cpu().numpy(), origin = "lower")
             ax.set_title(name)
             # ax.axis('off')
