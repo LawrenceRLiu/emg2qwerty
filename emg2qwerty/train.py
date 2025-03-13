@@ -90,9 +90,14 @@ def main(config: DictConfig):
     callback_configs = config.get("callbacks", [])
     callbacks = [instantiate(cfg) for cfg in callback_configs]
 
+
+    #initlialize a wandb logger
+    logger = pl.loggers.WandbLogger(project="emg2qwerty", name="emg2qwerty")
+    logger.log_hyperparams(config)
     # Initialize trainer
     trainer = pl.Trainer(
         **config.trainer,
+        logger=logger,
         callbacks=callbacks,
     )
 

@@ -76,7 +76,7 @@ test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False,
 model_config = ViTMAE.LightningConfig(
     SingleChannelConv.SingleChannelAE_CNN_Config(
         # sequence_len = window_length,
-        n_fft =  64,
+        n_fft =  256,
         hop_length = 16,
         log_spectogram = False,
         predict_phases = False,

@@ -25,7 +25,10 @@ from emg2qwerty.modules import (
     MultiBandRotationInvariantMLP,
     SpectrogramNorm,
     TDSConvEncoder,
+    TDSConv2dBlock,
+    TDSFullyConnectedBlock,
 )
+from emg2qwerty.additional_modules import CNN_RNN_Encoder, TDSConvBlock
 from emg2qwerty.transforms import Transform
 
 
@@ -137,6 +140,51 @@ class WindowedEMGDataModule(pl.LightningDataModule):
         )
 
 
+# class ConvBlock(nn.Module):
+#     def __init__(self, num_features, channels, kernel_width):
+
+#         super().__init__()
+
+#         self.conv = TDSConv2dBlock(channels, num_features // channels, kernel_width),
+#         self.fnn = TDSFullyConnectedBlock(num_features),
+
+#     def forward(self, x):
+#         x = self.conv(x)
+#         x = self.fnn(x)
+#         return (x,) #unified output format
+
+# class CNN_RNN_Encoder(nn.Module):
+#     #striped CNN RNN encoder
+
+#     def __init__(self, 
+#                  num_features: int,
+#                  stripping:List[Literal["CNN", "RNN"]] = ["CNN","RNN","CNN","RNN"],
+#                  CNN_config: Optional[DictConfig] = None,
+#                     RNN_config: Optional[DictConfig] = None) -> None:
+        
+#         super().__init__()
+
+#         self.stripping = stripping
+
+#         layers = []
+#         for i, layer in enumerate(stripping):
+#             if layer == "CNN":
+#                 layers.append(instantiate(CNN_config))
+#             elif layer == "RNN":
+#                 layers.append(instantiate(RNN_config, hidden_size = num_features if RNN_config.bidirectional else num_features//2))
+#             else:
+#                 raise ValueError(f"Unknown layer type: {layer}")
+
+#         self.layers = nn.ModuleList(layers)
+    
+#     def forward(self, x):
+#         for layer in self.layers:
+#             x,*_ = layer(x)
+#         return x
+
+
+    
+
 class TDSConvCTCModule(pl.LightningModule):
     NUM_BANDS: ClassVar[int] = 2
     ELECTRODE_CHANNELS: ClassVar[int] = 16
@@ -145,8 +193,7 @@ class TDSConvCTCModule(pl.LightningModule):
         self,
         in_features: int,
         mlp_features: Sequence[int],
-        block_channels: Sequence[int],
-        kernel_width: int,
+        encoder_config: DictConfig,
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
         decoder: DictConfig,
@@ -169,11 +216,22 @@ class TDSConvCTCModule(pl.LightningModule):
             ),
             # (T, N, num_features)
             nn.Flatten(start_dim=2),
-            TDSConvEncoder(
-                num_features=num_features,
-                block_channels=block_channels,
-                kernel_width=kernel_width,
-            ),
+            # nn.TransformerEncoder(
+            #     nn.TransformerEncoderLayer(
+            #         d_model=num_features,
+            #         nhead=16,
+            #         dim_feedforward=num_features *2,
+            #         dropout=0.0,
+            #     ),
+            #     num_layers=4,
+            # ),
+            instantiate(encoder_config, num_features=num_features, _recursive_=False),
+            # (T, N, num_features)
+            # TDSConvEncoder(
+            #     num_features=num_features,
+            #     block_channels=block_channels,
+            #     kernel_width=kernel_width,
+            # ),
             # (T, N, num_classes)
             nn.Linear(num_features, charset().num_classes),
             nn.LogSoftmax(dim=-1),

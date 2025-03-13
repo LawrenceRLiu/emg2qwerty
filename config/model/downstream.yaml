@@ -2,30 +2,30 @@
 module:
   _target_: foundational_model.downstream_models.model.DownstreamModelLighting
   foundational_model_name: "SingleChannelConv"
-  foundational_model_checkpoint: "./runs/fine-darkness-141/emg2qwerty_pretraining/version_None/checkpoints/epoch=7-step=24520.ckpt"
+  foundational_model_checkpoint: "./runs/proud-feather-143/emg2qwerty_pretraining/version_None/checkpoints/epoch=1-step=6130.ckpt"
   DownstreamHead_config:
     # _target_: foundational_model.downstream_models.model.DownstreamModel
-    freeze_foundational_model: True
+    freeze_foundational_model: False
     pre_pooling_mlp_config:
       n_layers: 1
-      output_size: 64
+      output_size: 512
       # n_layers: 0
     post_pooling_mlp_config:
       n_layers: 2
-      hidden_dims: [128]
-      dropout: 0.0
+      hidden_dims: [512, 256]
+      dropout: 0.1
     pooling_config:
       _target_: foundational_model.downstream_models.pool.AttentionPool
-      n_heads: 8
+      n_heads: 16
       # embedding_size: 1568
       attention_MLP:
         n_layers: 1
         # hidden_dims: [512]
-        dropout: 0.0
+        dropout: 0.1
       value_MLP:
         n_layers: 1
         # hidden_dims: [512]
-        dropout: 0.0
+        dropout: 0.1
     embedding_config:
       _target_: foundational_model.downstream_models.embedding.SimpleEmbedding
       
